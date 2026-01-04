@@ -34,7 +34,7 @@ st.markdown("""
 <style>
     /* Rich cream paper texture background - matching webpage style */
     .stApp {
-        background-color: #fff8e7;
+        background-color: #fdfdf1;
         background-image: 
             radial-gradient(circle at 10% 20%, rgba(255,250,240,0.5) 0%, transparent 50%),
             radial-gradient(circle at 90% 80%, rgba(255,250,240,0.5) 0%, transparent 50%),
@@ -1639,16 +1639,18 @@ def main():
     
     app = st.session_state.app
     
-    # Header
-    st.markdown('<h1 class="main-header">🔬 HighFIE Lab</h1>', 
-                unsafe_allow_html=True)
     
-    st.markdown("""
-    <div class="info-box">
-    <b>High-Order Fourier Interpolation with Extension</b><br>
-    An interface for developing and testing high-order Fourier Interpolation with grid extension
-    </div>
-    """, unsafe_allow_html=True)
+    ## Header
+    #st.markdown('<h1 class="main-header">🔬 HighFIE Lab</h1>', 
+    #            unsafe_allow_html=True)
+    #
+    #st.markdown("""
+    #<div class="info-box">
+    #<b>High-Order Fourier Interpolation with Extension</b><br>
+    #An interface for developing and testing high-order Fourier Interpolation with grid extension
+    #</div>
+    #""", unsafe_allow_html=True)
+    
     
     # Main tabs - SIMPLIFIED to 2 tabs
     tab_setup, tab_compare = st.tabs([
