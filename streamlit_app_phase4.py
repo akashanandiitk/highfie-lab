@@ -2651,7 +2651,6 @@ def main():
     <small>
     <b>HighFIE Lab</b> - High-Order Fourier Interpolation with Extension<br>
     Developed at <b>Indian Institute of Technology Kanpur</b><br>
-    Built with Streamlit | Based on spectral methods for function approximation
     </small>
     </div>
     """, unsafe_allow_html=True)
