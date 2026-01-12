@@ -2241,6 +2241,7 @@ def main():
         st.latex(r"c = \left\lfloor \frac{p}{q} \times n \right\rfloor")
         st.markdown(r"""
            where $q$ must divide $n$ for optimal FFT efficiency
+           
         3. **Extension Methods**: Various approaches can be used:
            - Zero padding
            - Constant extension
