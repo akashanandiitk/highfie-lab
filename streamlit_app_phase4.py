@@ -137,6 +137,7 @@ st.markdown("""
         border-radius: 8px !important;
         padding: 0.5rem !important;
         font-weight: 500 !important;
+        caret-color: #4da6ff !important;  /* Bright blue cursor for visibility */
     }
     
     /* Input focus state */
@@ -214,6 +215,17 @@ st.markdown("""
         background: #1a1a2e !important;
         border: 2px solid #0f3460 !important;
         border-radius: 8px !important;
+    }
+    
+    /* Ensure cursor is visible in all text areas and code editors */
+    * {
+        caret-color: #4da6ff !important;  /* Bright blue cursor globally */
+    }
+    
+    /* Override for light backgrounds (if any) */
+    [data-baseweb="input"] input,
+    [data-baseweb="textarea"] textarea {
+        caret-color: #4da6ff !important;
     }
     
     /* Input labels */
@@ -1191,18 +1203,9 @@ def setup_tab(app):
             xr_str = format_value(xr)
             ax_preview.set_title(f'Function on [{xl_str}, {xr_str}]', fontsize=11, fontweight='bold')
             
-            # Statistics
-            f_min, f_max = np.min(f_preview), np.max(f_preview)
-            f_mean = np.mean(f_preview)
-            
             st.pyplot(fig_preview)
             create_download_button(fig_preview, "function_preview", key="dl_func_preview")
             plt.close(fig_preview)
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Min", f"{f_min:.3f}")
-            col2.metric("Max", f"{f_max:.3f}")
-            col3.metric("Mean", f"{f_mean:.3f}")
             
         except Exception as e:
             st.error(f"Preview error: {e}")
@@ -1255,7 +1258,6 @@ def setup_tab(app):
                 if method == "Hermite-GP":
                     d = st.slider(label, min_value=2, max_value=10, value=5, step=1)
                     r = d - 1  # Convert degree to order
-                    st.caption(f"Order: r = {r}")
                     
                     # Warn if d might be too large
                     n_min = st.session_state.config.get('n_min', 16)
@@ -1266,12 +1268,9 @@ def setup_tab(app):
                 
                 st.session_state.config['r'] = r
             
-            # Show method info
-            if method == "Hermite-GP":
-                if app.gram_loaded:
-                    st.success("✅ Hermite-GP: High accuracy with Gram polynomials (~10⁻¹⁰ precision)")
-                else:
-                    st.warning("⚠️ Hermite-GP data files not found. Method will fall back to Hermite-FD.")
+            # Show warning only if Gram data not loaded
+            if method == "Hermite-GP" and not app.gram_loaded:
+                st.warning("⚠️ Hermite-GP data files not found. Method will fall back to Hermite-FD.")
         
         else:  # Custom Code
             st.markdown("**Define custom extension:**")
