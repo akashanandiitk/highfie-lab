@@ -24,7 +24,7 @@ import math
 
 st.set_page_config(
     page_title="HighFIE Lab",
-    page_icon="🔬",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -293,7 +293,7 @@ st.markdown("""
 # HELPER FUNCTIONS
 # =============================================================================
 
-def create_download_button(fig, filename, label="📥 Download Plot (PNG, 300 DPI)", key=None):
+def create_download_button(fig, filename, label="Download Plot (PNG, 300 DPI)", key=None):
     """Create a download button for a matplotlib figure.
     
     Args:
@@ -725,7 +725,7 @@ class FourierInterpolationApp:
         if show_message:
             message_placeholder = st.empty()
             with message_placeholder:
-                st.info("⚙️ Computing new FD coefficients...")
+                st.info("Computing new FD coefficients...")
         
         try:
             import sympy as sp
@@ -776,7 +776,7 @@ class FourierInterpolationApp:
                 # Show brief success message that auto-disappears
                 import time
                 with message_placeholder:
-                    st.success("✅ FD coefficient database updated!")
+                    st.success("FD coefficient database updated!")
                 time.sleep(2)  # Show for 2 seconds
                 message_placeholder.empty()  # Clear message
             
@@ -786,7 +786,7 @@ class FourierInterpolationApp:
             if show_message:
                 import time
                 with message_placeholder:
-                    st.warning(f"⚠️ Using numerical method for FD coefficients")
+                    st.warning(f"Using numerical method for FD coefficients")
                 time.sleep(2)
                 message_placeholder.empty()
             
@@ -915,7 +915,7 @@ class FourierInterpolationApp:
 
 def setup_tab(app):
     """Setup tab with full-width configuration."""
-    st.markdown("## ⚙️ Configure Your Analysis")
+    st.markdown("## Configure Your Analysis")
     st.markdown("Define your function, domain, extension method, and analysis parameters with full-width editors.")
     
     # Initialize session state for configuration
@@ -938,7 +938,7 @@ def setup_tab(app):
     # SECTION 1: FUNCTION DEFINITION
     # ==========================================================================
     st.markdown("---")
-    st.subheader("1️⃣ Test Function")
+    st.subheader("1. Test Function")
     
     col_func_input, col_func_preview = st.columns([1, 1])
     
@@ -989,7 +989,7 @@ def setup_tab(app):
             st.session_state.prev_func_mode = func_mode
             
             if func_mode == "Simple Expression":
-                with st.expander("ℹ️ Help: Simple Expressions"):
+                with st.expander("Help: Simple Expressions"):
                     st.markdown("""
                     Use SymPy expressions with variable `x`:
                     - `sin(2*pi*x)` - Sine function
@@ -1014,7 +1014,7 @@ def setup_tab(app):
                     return None, None, None
             
             else:  # Python Code
-                with st.expander("📚 Help: Python Code"):
+                with st.expander("Help: Python Code"):
                     st.markdown("""
                     **Piecewise function:**
                     ```python
@@ -1055,20 +1055,20 @@ def setup_tab(app):
                     save_name = st.text_input("Name to save:", value="my_function", key="save_func_name", label_visibility="collapsed", placeholder="Name to save")
                 
                 with col2:
-                    if st.button("💾 Save", key="save_func_btn", use_container_width=True):
+                    if st.button("Save", key="save_func_btn", use_container_width=True):
                         if func_code and save_name:
                             st.session_state.saved_code_snippets[save_name] = {
                                 'code': func_code,
                                 'type': 'function'
                             }
-                            st.success(f"✅ Saved '{save_name}'")
+                            st.success(f"Saved '{save_name}'")
                 
                 with col3:
                     if st.session_state.saved_code_snippets:
                         func_snippets = {k: v for k, v in st.session_state.saved_code_snippets.items() if v['type'] == 'function'}
                         if func_snippets:
                             selected = st.selectbox("Load:", list(func_snippets.keys()), key="load_func_select", label_visibility="collapsed")
-                            if st.button("📂 Load", key="load_func_btn", use_container_width=True):
+                            if st.button("Load", key="load_func_btn", use_container_width=True):
                                 st.session_state.loaded_func_code = func_snippets[selected]['code']
                                 st.rerun()
                 
@@ -1089,7 +1089,7 @@ def setup_tab(app):
                             st.session_state.saved_code_snippets[name] = {'code': code, 'type': 'function'}
                             st.session_state.loaded_func_code = code
                             st.session_state.last_uploaded_func_hash = file_hash
-                            st.success(f"✅ Uploaded '{name}'!")
+                            st.success(f"Uploaded '{name}'!")
                             st.rerun()
                 
                 func_str = func_code
@@ -1117,7 +1117,7 @@ def setup_tab(app):
     # SECTION 2: DOMAIN
     # ==========================================================================
     st.markdown("---")
-    st.subheader("2️⃣ Domain")
+    st.subheader("2. Domain")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -1214,7 +1214,7 @@ def setup_tab(app):
     # SECTION 3: EXTENSION METHOD
     # ==========================================================================
     st.markdown("---")
-    st.subheader("3️⃣ Extension Method")
+    st.subheader("3. Extension Method")
     
     col_ext_config, col_ext_preview = st.columns([1, 1])
     
@@ -1262,7 +1262,7 @@ def setup_tab(app):
                     # Warn if d might be too large
                     n_min = st.session_state.config.get('n_min', 16)
                     if d > n_min:
-                        st.warning(f"⚠️ d={d} requires n ≥ {d}. Current n_min={n_min} may be too small. Increase n_min or reduce d.")
+                        st.warning(f"d={d} requires n ≥ {d}. Current n_min={n_min} may be too small. Increase n_min or reduce d.")
                 else:
                     r = st.slider(label, min_value=2, max_value=8, value=st.session_state.config['r'], step=1)
                 
@@ -1270,13 +1270,13 @@ def setup_tab(app):
             
             # Show warning only if Gram data not loaded
             if method == "Hermite-GP" and not app.gram_loaded:
-                st.warning("⚠️ Hermite-GP data files not found. Method will fall back to Hermite-FD.")
+                st.warning("Hermite-GP data files not found. Method will fall back to Hermite-FD.")
         
         else:  # Custom Code
             st.markdown("**Define custom extension:**")
             
             # Show examples
-            with st.expander("📚 Extension Examples"):
+            with st.expander("Extension Examples"):
                 st.markdown("""
                 **Polynomial Extrapolation:**
                 ```python
@@ -1332,20 +1332,20 @@ def setup_tab(app):
                 save_ext_name = st.text_input("Name to save:", value="my_extension", key="save_ext_name", label_visibility="collapsed", placeholder="Name to save")
             
             with col2:
-                if st.button("💾 Save", key="save_ext_btn", use_container_width=True):
+                if st.button("Save", key="save_ext_btn", use_container_width=True):
                     if extension_code and save_ext_name:
                         st.session_state.saved_code_snippets[save_ext_name] = {
                             'code': extension_code,
                             'type': 'extension'
                         }
-                        st.success(f"✅ Saved '{save_ext_name}'")
+                        st.success(f"Saved '{save_ext_name}'")
             
             with col3:
                 if st.session_state.saved_code_snippets:
                     ext_snippets = {k: v for k, v in st.session_state.saved_code_snippets.items() if v['type'] == 'extension'}
                     if ext_snippets:
                         selected_ext = st.selectbox("Load:", list(ext_snippets.keys()), key="load_ext_select", label_visibility="collapsed")
-                        if st.button("📂 Load", key="load_ext_btn", use_container_width=True):
+                        if st.button("Load", key="load_ext_btn", use_container_width=True):
                             st.session_state.loaded_ext_code = ext_snippets[selected_ext]['code']
                             st.rerun()
             
@@ -1366,7 +1366,7 @@ def setup_tab(app):
                         st.session_state.saved_code_snippets[ext_name] = {'code': ext_code, 'type': 'extension'}
                         st.session_state.loaded_ext_code = ext_code
                         st.session_state.last_uploaded_ext_hash = ext_file_hash
-                        st.success(f"✅ Uploaded '{ext_name}'!")
+                        st.success(f"Uploaded '{ext_name}'!")
                         st.rerun()
             
             # Optional parameters
@@ -1427,27 +1427,27 @@ def setup_tab(app):
             if extension_mode == "No Extension":
                 # No extension, just use the original data
                 extended_test = f_test
-                st.caption(f"ℹ️ No extension (c = 0)")
+                st.caption(f"No extension (c = 0)")
             elif extension_mode == "Built-in Methods":
                 preview_shift = st.session_state.config.get('shift', 0.0)
                 extended_test = app.extend_grid_python(f_test, xl, xr, c_test, method, r, preview_shift)
-                st.caption(f"ℹ️ Preview with n={n_test}, c={c_test} (using p={p_preview}, q={q_preview}, s={preview_shift})")
+                st.caption(f"Preview with n={n_test}, c={c_test} (using p={p_preview}, q={q_preview}, s={preview_shift})")
             else:
                 if custom_extension_func is None:
-                    st.info("👆 Define custom extension code above to see preview")
+                    st.info("Define custom extension code above to see preview")
                     return None, None, None
                 extended_test = custom_extension_func(f_test, c_test, xl, xr, n_test, **custom_extension_params)
-                st.caption(f"ℹ️ Preview with n={n_test}, c={c_test} (using p={p_preview}, q={q_preview})")
+                st.caption(f"Preview with n={n_test}, c={c_test} (using p={p_preview}, q={q_preview})")
             
             # Validate
             if not isinstance(extended_test, np.ndarray):
-                st.error("❌ Must return numpy array")
+                st.error("Must return numpy array")
             elif len(extended_test) != n_test + c_test:
-                st.error(f"❌ Wrong length: expected {n_test + c_test}, got {len(extended_test)}")
+                st.error(f"Wrong length: expected {n_test + c_test}, got {len(extended_test)}")
             elif c_test > 0 and not np.allclose(extended_test[:n_test], f_test, rtol=1e-10):
-                st.error("❌ First n elements must equal input")
+                st.error("First n elements must equal input")
             elif not np.all(np.isfinite(extended_test)):
-                st.error("❌ Contains NaN or Inf")
+                st.error("Contains NaN or Inf")
             else:
                 # Bilateral preview - simplified and corrected
                 fig_test, ax_test = plt.subplots(figsize=(7, 4))
@@ -1511,16 +1511,16 @@ def setup_tab(app):
                 create_download_button(fig_test, "extension_preview", key="dl_ext_preview")
                 plt.close(fig_test)
                 
-                st.caption(f"✅ Extended {n_test} → {n_test + c_test} points")
+                st.caption(f"Extended {n_test} → {n_test + c_test} points")
         
         except Exception as e:
-            st.error(f"❌ Preview failed: {e}")
+            st.error(f"Preview failed: {e}")
     
     # ==========================================================================
     # SECTION 4: GRID CONFIGURATION
     # ==========================================================================
     st.markdown("---")
-    st.subheader("4️⃣ Grid Configuration")
+    st.subheader("4. Grid Configuration")
     
     # Initialize shift parameter if not exists
     if 'shift' not in st.session_state.config:
@@ -1615,10 +1615,10 @@ def setup_tab(app):
     # Display grid info with shift parameter
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.info(f"📐 Extension: c = ({p}/{q}) × n")
+        st.info(f"Extension: c = ({p}/{q}) × n")
     with col2:
         grid_sizes = [n_min * 2**i for i in range(n_levels)]
-        st.info(f"🔢 Grids: {', '.join(map(str, grid_sizes[:5]))}{'...' if n_levels > 5 else ''}")
+        st.info(f"Grids: {', '.join(map(str, grid_sizes[:5]))}{'...' if n_levels > 5 else ''}")
     with col3:
         if shift == 0:
             grid_type = "Standard (closed)"
@@ -1626,7 +1626,7 @@ def setup_tab(app):
             grid_type = "Open (midpoints)"
         else:
             grid_type = f"Shifted (s={shift})"
-        st.info(f"📍 Grid: {grid_type}")
+        st.info(f"Grid: {grid_type}")
     
     # ==========================================================================
     # RUN BUTTON
@@ -1636,7 +1636,7 @@ def setup_tab(app):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         run_analysis = st.button(
-            "📈 Run Complete Analysis",
+            "Run Complete Analysis",
             type="primary",
             use_container_width=True,
             help="Execute analysis with current configuration",
@@ -1724,7 +1724,7 @@ def setup_tab(app):
             if not results_list:
                 st.error("No valid grid sizes found! Adjust p and q.")
             else:
-                st.success(f"✅ Analysis complete! {len(results_list)} grids tested. Scroll down to see results.")
+                st.success(f"Analysis complete! {len(results_list)} grids tested. Scroll down to see results.")
     
     return func, func_str, method
 
@@ -1732,11 +1732,11 @@ def setup_tab(app):
 def compare_tab():
     """Compare tab - add methods to compare against the Setup configuration."""
     
-    st.markdown("### ⚖️ Compare Extension Methods")
+    st.markdown("### Compare Extension Methods")
     
     # Check if analysis has been run
     if not st.session_state.results_list or not st.session_state.analysis_params:
-        st.warning("⚠️ Please run analysis in the **Setup & Test** tab first!")
+        st.warning("Please run analysis in the **Setup & Test** tab first!")
         st.markdown("""
         **To use comparison:**
         1. Go to **Setup & Test** tab
@@ -1751,10 +1751,10 @@ def compare_tab():
     params = st.session_state.analysis_params
     baseline_results = st.session_state.results_list
     
-    st.success("✅ Using configuration from Setup & Test tab")
+    st.success("Using configuration from Setup & Test tab")
     
     # Display baseline configuration (read-only)
-    st.markdown("#### 📋 Baseline Configuration (from Setup & Test)")
+    st.markdown("#### Baseline Configuration (from Setup & Test)")
     
     col1, col2, col3 = st.columns(3)
     
@@ -1773,8 +1773,11 @@ def compare_tab():
     p = params['p']
     q = params['q']
     
-    if baseline_method == 'Hermite':
-        baseline_label = f"Hermite (r={params['r']}, c=({p}/{q})n)"
+    if baseline_method in ['Hermite', 'Hermite-FD']:
+        baseline_label = f"Hermite-FD (r={params['r']}, c=({p}/{q})n)"
+    elif baseline_method == 'Hermite-GP':
+        d = params['r'] + 1  # Convert r back to d for display
+        baseline_label = f"Hermite-GP (d={d}, c=({p}/{q})n)"
     elif baseline_method == 'Custom':
         baseline_label = f"Custom Extension (c=({p}/{q})n)"
     elif baseline_method == 'Zero' and p == 0:
@@ -1812,7 +1815,7 @@ def compare_tab():
         st.session_state.comparison_methods = []
         st.session_state.last_baseline_config = current_baseline_config
         if st.session_state.last_baseline_config is not None:  # Don't show on first load
-            st.info(f"🔄 Reset comparison for new configuration: {baseline_label}")
+            st.info(f"Reset comparison for new configuration: {baseline_label}")
     
     # Add baseline to comparison results if not already there
     if baseline_label not in st.session_state.comparison_results:
@@ -1825,8 +1828,8 @@ def compare_tab():
     # METHOD SELECTION (REDESIGNED - SEPARATE CONTROLS)
     # ==========================================================================
     
-    st.markdown("#### 📊 Method Selection")
-    st.info(f"💡 **Baseline**: {baseline_label} ⭐ (always included)")
+    st.markdown("#### Method Selection")
+    st.info(f"**Baseline**: {baseline_label} [Baseline] (always included)")
     
     st.markdown("**Configure method to add:**")
     
@@ -1923,14 +1926,14 @@ def compare_tab():
     with col_add:
         if config_exists:
             st.button(
-                "✅ Already Added",
+                "Already Added",
                 disabled=True,
                 use_container_width=True,
                 help="This exact configuration is already in the comparison"
             )
         else:
             add_config = st.button(
-                "➕ Add to Comparison",
+                "Add to Comparison",
                 type="primary",
                 use_container_width=True,
                 help="Add this configuration to the comparison"
@@ -1938,7 +1941,7 @@ def compare_tab():
     
     with col_info:
         if config_exists:
-            st.caption("⚠️ This configuration is already being compared")
+            st.caption("This configuration is already being compared")
         else:
             st.caption(f"Will add: **{config_key}**")
     
@@ -2052,7 +2055,7 @@ def compare_tab():
                 'results': results_list
             }
             
-            st.success(f"✅ Added {config_key} to comparison!")
+            st.success(f"Added {config_key} to comparison!")
             st.rerun()
     
     # ==========================================================================
@@ -2060,7 +2063,7 @@ def compare_tab():
     # ==========================================================================
     
     st.markdown("---")
-    st.markdown("#### 📋 Currently Comparing")
+    st.markdown("#### Currently Comparing")
     
     if len(st.session_state.comparison_results) == 1:
         st.info("Only baseline included. Add methods above to compare.")
@@ -2082,7 +2085,7 @@ def compare_tab():
         if baseline_config:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                st.markdown(f"**⭐ {baseline_config[0]}**")
+                st.markdown(f"**[Baseline] {baseline_config[0]}**")
                 st.caption("(Baseline from Setup & Test)")
         
         # Rows 2+: Other methods (3 per row)
@@ -2098,14 +2101,14 @@ def compare_tab():
                         
                         with col:
                             st.markdown(f"**{label}**")
-                            if st.button(f"🗑️ Remove", key=f"remove_{idx}", type="secondary", use_container_width=True):
+                            if st.button(f"Remove", key=f"remove_{idx}", type="secondary", use_container_width=True):
                                 del st.session_state.comparison_results[label]
                                 st.rerun()
     
     st.markdown("---")
     
     # Clear all button
-    if st.button("🗑️ Clear All Comparisons", type="secondary", use_container_width=False, help="Remove all methods except baseline"):
+    if st.button("Clear All Comparisons", type="secondary", use_container_width=False, help="Remove all methods except baseline"):
         st.session_state.comparison_results = {
             baseline_label: {
                 'config': params,
@@ -2120,7 +2123,7 @@ def compare_tab():
     
     if len(st.session_state.comparison_results) > 1:  # More than just baseline
         st.markdown("---")
-        st.subheader("📊 Comparison Results")
+        st.subheader("Comparison Results")
         
         st.info(f"Comparing {len(st.session_state.comparison_results)} method(s) including baseline")
         
@@ -2143,15 +2146,15 @@ def compare_tab():
             is_baseline = (label == baseline_label)
             
             comparison_data.append({
-                'Method': label + (' ⭐' if is_baseline else ''),
+                'Method': label + (' [Baseline]' if is_baseline else ''),
                 'Extension (c)': finest['c'],
                 'Best Grid': finest['n'],
                 'Max Abs Error': finest['max_abs_error'],
                 'Max Rel Error': finest['max_rel_error'],
                 'Avg Rate': avg_rate,
-                'Quality': ('🌟' if finest['max_rel_error'] < 1e-10 else
-                           '✅' if finest['max_rel_error'] < 1e-6 else
-                           '⚠️' if finest['max_rel_error'] < 1e-3 else '❌')
+                'Quality': ('Excellent' if finest['max_rel_error'] < 1e-10 else
+                           'Good' if finest['max_rel_error'] < 1e-6 else
+                           'Fair' if finest['max_rel_error'] < 1e-3 else 'Poor')
             })
         
         # Create DataFrame and highlight winner
@@ -2166,7 +2169,7 @@ def compare_tab():
             """Highlight winner and baseline rows."""
             # row.name is the index (row number)
             is_winner = (row.name == winner_idx)
-            is_baseline_row = '⭐' in str(row['Method'])
+            is_baseline_row = '[Baseline]' in str(row['Method'])
             
             if is_winner:
                 return ['background-color: #d4edda'] * len(row)  # Green for winner
@@ -2185,11 +2188,11 @@ def compare_tab():
             hide_index=True
         )
         
-        st.markdown(f"🏆 **Winner**: {df.loc[winner_idx, 'Method']} | ⭐ = Baseline from Setup")
+        st.markdown(f"**Winner**: {df.loc[winner_idx, 'Method']} | [Baseline] = Baseline from Setup")
         
         # Detailed visualizations
         st.markdown("---")
-        st.markdown("#### 📈 Comparison Plots")
+        st.markdown("#### Comparison Plots")
         
         # Plot 1: Convergence comparison
         fig_conv = plt.figure(figsize=(16, 6))
@@ -2239,7 +2242,7 @@ def compare_tab():
                         rates.append(rate)
             
             # Add star to baseline
-            star = ' ⭐' if label == baseline_label else ''
+            star = ' [Baseline]' if label == baseline_label else ''
             
             # Split label into method and parameters
             if '(' in label:
@@ -2277,7 +2280,7 @@ def compare_tab():
         
         # Plot 2: Error distribution comparison
         st.markdown("---")
-        st.markdown("#### 🎯 Error Distribution (Finest Grid)")
+        st.markdown("#### Error Distribution (Finest Grid)")
         
         # Get finest grid from first method
         first_label = list(st.session_state.comparison_results.keys())[0]
@@ -2350,7 +2353,7 @@ def compare_tab():
         
         # Export comparison data
         st.markdown("---")
-        st.markdown("#### 💾 Export Comparison Data")
+        st.markdown("#### Export Comparison Data")
         
         col1, col2 = st.columns(2)
         
@@ -2358,17 +2361,17 @@ def compare_tab():
             # Export as CSV
             csv_data = df.to_csv(index=False)
             st.download_button(
-                label="📥 Download Comparison Table (CSV)",
+                label="Download Comparison Table (CSV)",
                 data=csv_data,
                 file_name="fourier_comparison.csv",
                 mime="text/csv"
             )
         
         with col2:
-            st.info("💡 **Tip**: Add more methods above or clear all to start fresh.")
+            st.info("**Tip**: Add more methods above or clear all to start fresh.")
     
     else:
-        st.info("👆 Add methods above to see comparison results. The baseline from Setup & Test is already included.")
+        st.info("Add methods above to see comparison results. The baseline from Setup & Test is already included.")
 # =============================================================================
 # MAIN FUNCTION
 # =============================================================================
@@ -2395,7 +2398,7 @@ def main():
     app = st.session_state.app
     
     # Header
-    # st.markdown('<h1 class="main-header">🔬 HighFIE Lab</h1>', 
+    # st.markdown('<h1 class="main-header">HighFIE Lab</h1>', 
     #            unsafe_allow_html=True)
     
     # st.markdown("""
@@ -2467,7 +2470,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    with st.expander("📖 **About the Method**", expanded=False):
+    with st.expander("**About the Method**", expanded=False):
         st.markdown('<div style="color: #4da6ff; font-size: 1.3rem; font-weight: 600; margin-bottom: 1rem;">Method Overview</div>', unsafe_allow_html=True)
         
         st.markdown(r"""
@@ -2545,8 +2548,8 @@ def main():
     
     # Main tabs - SIMPLIFIED to 2 tabs
     tab_setup, tab_compare = st.tabs([
-        "⚙️ Setup & Test",
-        "⚖️ Compare"
+        "Setup & Test",
+        "Compare"
     ])
     
     # ==========================================================================
@@ -2557,8 +2560,8 @@ def main():
         
         # Add quick test section at bottom
         st.markdown("---")
-        st.markdown("### 🧪 Quick Test")
-        st.info("💡 **Tip**: Test your configuration with a single method before running full comparison.")
+        st.markdown("### Quick Test")
+        st.info("**Tip**: Test your configuration with a single method before running full comparison.")
         
         if st.session_state.results_list:
             st.markdown("#### Latest Test Results")
@@ -2745,7 +2748,7 @@ def main():
             
             # Row 3: Convergence analysis (plot + table)
             st.markdown("#### Convergence Analysis")
-            st.caption(f"ℹ️ Evaluation grid: n_eval = 2 × n_max = {2 * params['n_max']} points")
+            st.caption(f"Evaluation grid: n_eval = 2 × n_max = {2 * params['n_max']} points")
             
             fig3 = plt.figure(figsize=(18, 10))
             gs3 = GridSpec(2, 1, figure=fig3, hspace=0.35)
@@ -2839,7 +2842,7 @@ def main():
             create_download_button(fig3, "convergence_analysis", key="dl_fig3")
             
             # Download buttons for convergence analysis
-            st.markdown("#### 📥 Export Convergence Data")
+            st.markdown("#### Export Convergence Data")
             col_dl1, col_dl2 = st.columns(2)
             
             with col_dl1:
@@ -2857,7 +2860,7 @@ def main():
                                     f"{rate_str},{rate_ext_str}\n")
                 
                 st.download_button(
-                    label="📥 Download Table (CSV)",
+                    label="Download Table (CSV)",
                     data=csv_buffer.getvalue(),
                     file_name="convergence_table.csv",
                     mime="text/csv",
@@ -2873,7 +2876,7 @@ def main():
                 buf.seek(0)
                 
                 st.download_button(
-                    label="📥 Download Plot (PNG, 300 DPI)",
+                    label="Download Plot (PNG, 300 DPI)",
                     data=buf,
                     file_name="convergence_plot.png",
                     mime="image/png",
@@ -2883,7 +2886,7 @@ def main():
             
             plt.close(fig3)
             
-            st.success(f"✅ Configuration tested successfully! Ready for comparison.")
+            st.success(f"Configuration tested successfully! Ready for comparison.")
             
             # ==================================================================
             # ==================================================================
@@ -2892,7 +2895,7 @@ def main():
             # Will be enabled in a future version
             
         else:
-            st.info("👆 Click **Run Analysis** above to test your configuration before comparing.")
+            st.info("Click **Run Analysis** above to test your configuration before comparing.")
     
     # TAB 2: COMPARE
     # ==========================================================================
