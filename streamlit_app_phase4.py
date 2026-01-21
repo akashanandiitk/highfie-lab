@@ -1615,7 +1615,7 @@ def setup_tab(app):
         else:
             # Ensure valid default when switching from No Extension
             default_p = max(1, st.session_state.config['p'])
-            p = st.number_input("Extension numerator (p)", min_value=1, max_value=10, 
+            p = st.number_input("Extension numerator (p)", min_value=1, max_value=32, 
                               value=default_p, step=1,
                               help="Extension size: c = (p/q) × n")
             st.session_state.config['p'] = p
@@ -1631,7 +1631,7 @@ def setup_tab(app):
         else:
             # Ensure valid default when switching from No Extension
             default_q = max(1, st.session_state.config['q'])
-            q = st.number_input("Extension denominator (q)", min_value=1, max_value=10, 
+            q = st.number_input("Extension denominator (q)", min_value=1, max_value=32, 
                               value=default_q, step=1,
                               help="Extension size: c = floor((p/q) × n)")
             st.session_state.config['q'] = q
