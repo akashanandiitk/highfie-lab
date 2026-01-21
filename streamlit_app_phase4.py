@@ -457,28 +457,56 @@ class FourierInterpolationApp:
         Hermite extension matching derivatives at both boundaries.
         Creates a smooth periodic continuation.
         
+        Special handling for s=0 and s=1:
+        - Input f has n+1 points (including both endpoints) for accurate derivatives
+        - Use all n+1 points to compute derivatives
+        - Drop the last point, keeping only first n points
+        - Then extend those n points → total n+c points
+        
         Parameters:
-        - f: function values on grid
+        - f: function values on grid (n or n+1 points)
         - c: number of extension points
         - r: Hermite order (number of derivatives to match)
         - shift: grid shift parameter (0 <= shift <= 1)
         """
-        n = len(f)
-        h = 1.0 / n  # Normalized grid spacing
+        n_input = len(f)
         xl = 0.0
         xr = 1.0
-        a = xl + shift * h  # Left boundary point accounting for shift
         
-        # Compute derivative matrix at boundaries
-        F = self.compute_fd_derivative_matrix(f, r, h, xl, xr, a)
+        # Determine if we're using n+1 grid
+        use_n_plus_1 = abs(shift) < 1e-12 or abs(shift - 1.0) < 1e-12
+        
+        if use_n_plus_1:
+            # f has n+1 points, treat as n intervals
+            n = n_input - 1
+            h = (xr - xl) / n
+            a = xl if abs(shift) < 1e-12 else xl + h
+            
+            # Compute derivatives using all n+1 points
+            F = self.compute_fd_derivative_matrix(f, r, h, xl, xr, a)
+            
+            # Drop the last point (keep only first n points)
+            f_trimmed = f[:n]
+        else:
+            # f has n points
+            n = n_input
+            h = (xr - xl) / n
+            a = xl + shift * h
+            
+            # Compute derivatives using n points
+            F = self.compute_fd_derivative_matrix(f, r, h, xl, xr, a)
+            
+            # No trimming needed
+            f_trimmed = f
         
         # Extend using Hermite interpolation
         extension = np.zeros(c)
         for j in range(c):
-            x = a + (n + j) * h  # Extension points continue from shifted grid
+            x = a + (n + j) * h
             extension[j] = self.hermite_eval(x, F, r, h, xr, c)
         
-        return np.concatenate([f, extension])
+        # Return n points + c extension = n+c total (NOT (n+1)+c)
+        return np.concatenate([f_trimmed, extension])
     
     def hermite_eval(self, x, F, r, h, xr, c):
         """
@@ -561,28 +589,56 @@ class FourierInterpolationApp:
         
         Much more accurate than FD method (~10^-10 vs 10^-8 precision).
         
+        Special handling for s=0 and s=1:
+        - Input f has n+1 points (including both endpoints) for accurate derivatives
+        - Use all n+1 points to compute derivatives
+        - Drop the last point, keeping only first n points
+        - Then extend those n points → total n+c points
+        
         Parameters:
-        - f: function values on grid
+        - f: function values on grid (n or n+1 points)
         - c: number of extension points
         - r: Hermite order (r = 1 to 9)
         - shift: grid shift parameter (0 <= shift <= 1)
         """
-        n = len(f)
-        h = 1.0 / n
+        n_input = len(f)
         xl = 0.0
         xr = 1.0
-        a = xl + shift * h
         
-        # Compute derivative matrix using Gram polynomials
-        F = self.compute_gp_derivative_matrix(f, r, h, xl, xr, a)
+        # Determine if we're using n+1 grid (MATLAB-style)
+        use_n_plus_1 = abs(shift) < 1e-12 or abs(shift - 1.0) < 1e-12
         
-        # Extend using same Hermite interpolation formula
+        if use_n_plus_1:
+            # f has n+1 points, treat as n intervals
+            n = n_input - 1
+            h = (xr - xl) / n
+            a = xl if abs(shift) < 1e-12 else xl + h
+            
+            # Compute derivatives using all n+1 points
+            F = self.compute_gp_derivative_matrix(f, r, h, xl, xr, a)
+            
+            # Drop the last point (keep only first n points)
+            f_trimmed = f[:n]
+        else:
+            # f has n points
+            n = n_input
+            h = (xr - xl) / n
+            a = xl + shift * h
+            
+            # Compute derivatives using n points
+            F = self.compute_gp_derivative_matrix(f, r, h, xl, xr, a)
+            
+            # No trimming needed
+            f_trimmed = f
+        
+        # Extend using Hermite interpolation
         extension = np.zeros(c)
         for j in range(c):
             x = a + (n + j) * h
             extension[j] = self.hermite_eval(x, F, r, h, xr, c)
         
-        return np.concatenate([f, extension])
+        # Return n points + c extension = n+c total (NOT (n+1)+c)
+        return np.concatenate([f_trimmed, extension])
     
     def compute_gp_derivative_matrix(self, f, r, h, xl, xr, a):
         """
@@ -1419,8 +1475,16 @@ def setup_tab(app):
             preview_shift_val = st.session_state.config.get('shift', 0.0)
             h_test_preview = (xr - xl) / n_test
             
-            # Generate shifted grid for function sampling
-            x_test = xl + (np.arange(n_test) + preview_shift_val) * h_test_preview
+            # Generate grid - use n+1 points for s=0 or s=1 (MATLAB-style)
+            use_n_plus_1_preview = abs(preview_shift_val) < 1e-12 or abs(preview_shift_val - 1.0) < 1e-12
+            
+            if use_n_plus_1_preview:
+                # n+1 points including both endpoints
+                x_test = xl + np.arange(n_test + 1) * h_test_preview
+            else:
+                # n points with shift
+                x_test = xl + (np.arange(n_test) + preview_shift_val) * h_test_preview
+            
             f_test = func(x_test)
             
             # Run extension
@@ -1440,12 +1504,16 @@ def setup_tab(app):
                 st.caption(f"Preview with n={n_test}, c={c_test} (using p={p_preview}, q={q_preview})")
             
             # Validate
+            # Note: For s=0 or s=1, f_test has n+1 points but extended_test has n+c points
+            # For other s, f_test has n points and extended_test has n+c points
+            expected_len = n_test + c_test  # Always n+c
+            
             if not isinstance(extended_test, np.ndarray):
                 st.error("Must return numpy array")
-            elif len(extended_test) != n_test + c_test:
-                st.error(f"Wrong length: expected {n_test + c_test}, got {len(extended_test)}")
-            elif c_test > 0 and not np.allclose(extended_test[:n_test], f_test, rtol=1e-10):
-                st.error("First n elements must equal input")
+            elif len(extended_test) != expected_len:
+                st.error(f"Wrong length: expected {expected_len}, got {len(extended_test)}")
+            elif c_test > 0 and not np.allclose(extended_test[:n_test], f_test[:n_test], rtol=1e-10):
+                st.error("First n elements must equal input (first n)")
             elif not np.all(np.isfinite(extended_test)):
                 st.error("Contains NaN or Inf")
             else:
@@ -1456,19 +1524,22 @@ def setup_tab(app):
                 # Get shift from config
                 preview_s = st.session_state.config.get('shift', 0.0)
                 
+                # Determine grid type
+                use_n_plus_1 = abs(preview_s) < 1e-12 or abs(preview_s - 1.0) < 1e-12
+                
+                # x_test may have n+1 points, but extended_test has n+c points
+                # Use first n points for plotting
+                x_grid_plot = x_test[:n_test] if use_n_plus_1 else x_test
+                
                 if c_test == 0:
                     # No extension - just plot original grid
-                    x_grid = xl + (np.arange(n_test) + preview_s) * h_test
-                    ax_test.plot(x_grid, extended_test, 'bo', markersize=6,
+                    ax_test.plot(x_grid_plot, extended_test[:len(x_grid_plot)], 'bo', markersize=6,
                                label='Input grid function', zorder=5)
                     ax_test.axvline(xl, color='gray', linestyle='--', alpha=0.6, linewidth=2,
                                   label='Domain boundaries')
                     ax_test.axvline(xr, color='gray', linestyle='--', alpha=0.6, linewidth=2)
                 else:
-                    # With extension - use SHIFTED grid throughout
-                    # Original grid points
-                    x_orig = xl + (np.arange(n_test) + preview_s) * h_test
-                    
+                    # With extension - extended_test has n+c points
                     # Extended grid points (right side)
                     x_right_ext = xl + (np.arange(n_test, n_test + c_test) + preview_s) * h_test
                     
@@ -1476,7 +1547,7 @@ def setup_tab(app):
                     x_left_ext = xl - (np.arange(c_test, 0, -1) - preview_s) * h_test
                     
                     # Full extended grid for green curve
-                    x_full = np.concatenate([x_left_ext, x_orig, x_right_ext])
+                    x_full = np.concatenate([x_left_ext, x_grid_plot, x_right_ext])
                     f_full = np.concatenate([extended_test[n_test:], extended_test[:n_test], extended_test[n_test:]])
                     
                     # Green curve for extended function
@@ -1484,13 +1555,13 @@ def setup_tab(app):
                                label='Extended function', zorder=3)
                     
                     # Blue circles for input grid function
-                    ax_test.plot(x_orig, extended_test[:n_test], 'bo', markersize=6, 
+                    ax_test.plot(x_grid_plot, extended_test[:n_test], 'bo', markersize=6, 
                                label='Input grid function', zorder=5)
                     
                     # Red squares for extended grid function  
-                    ax_test.plot(x_left_ext, extended_test[n_test:], 'rs', markersize=6, 
+                    ax_test.plot(x_left_ext, extended_test[n_test:n_test+c_test], 'rs', markersize=6, 
                                label='Extended grid function', zorder=5)
-                    ax_test.plot(x_right_ext, extended_test[n_test:], 'rs', markersize=6, zorder=5)
+                    ax_test.plot(x_right_ext, extended_test[n_test:n_test+c_test], 'rs', markersize=6, zorder=5)
                     
                     # Extension regions
                     ax_test.axvspan(x_left_ext[0], xl, alpha=0.2, color='yellow', label='Extension region')
@@ -1503,15 +1574,20 @@ def setup_tab(app):
                 
                 ax_test.legend(fontsize=8, ncol=2, loc='best')
                 ax_test.grid(True, alpha=0.3)
+                
+                # Update title - always shows n (even though we might use n+1 for derivatives)
                 ax_test.set_title(f'Extension Preview: n={n_test}, c={c_test}', 
                                 fontsize=10, fontweight='bold')
+                
                 ax_test.set_xlabel('x', fontsize=9)
                 ax_test.set_ylabel('f(x)', fontsize=9)
                 st.pyplot(fig_test)
                 create_download_button(fig_test, "extension_preview", key="dl_ext_preview")
                 plt.close(fig_test)
                 
-                st.caption(f"Extended {n_test} → {n_test + c_test} points")
+                # Show correct point count - always n→n+c
+                if c_test > 0:
+                    st.caption(f"Extended {n_test} → {n_test + c_test} points")
         
         except Exception as e:
             st.error(f"Preview failed: {e}")
@@ -1620,12 +1696,17 @@ def setup_tab(app):
         grid_sizes = [n_min * 2**i for i in range(n_levels)]
         st.info(f"Grids: {', '.join(map(str, grid_sizes[:5]))}{'...' if n_levels > 5 else ''}")
     with col3:
+        # Check if using n+1 grid (MATLAB-style)
+        use_n_plus_1 = abs(shift) < 1e-12 or abs(shift - 1.0) < 1e-12
+        
         if shift == 0:
-            grid_type = "Standard (closed)"
+            grid_type = "Standard (n+1 pts, both endpoints)" if use_n_plus_1 else "Standard"
+        elif abs(shift - 1.0) < 1e-12:
+            grid_type = "Shifted (n+1 pts, both endpoints)"
         elif shift == 0.5:
-            grid_type = "Open (midpoints)"
+            grid_type = "Open (midpoints, n pts)"
         else:
-            grid_type = f"Shifted (s={shift})"
+            grid_type = f"Shifted (s={shift}, n pts)"
         st.info(f"Grid: {grid_type}")
     
     # ==========================================================================
@@ -1654,8 +1735,16 @@ def setup_tab(app):
                 c_level = int((p / q) * n_level)
                 
                 # Generate grid with shift parameter
-                h = (xr - xl) / n_level
-                x_grid = xl + (np.arange(n_level) + shift) * h
+                # Special case: s=0 or s=1 → use n+1 points (both endpoints) like MATLAB
+                if abs(shift) < 1e-12 or abs(shift - 1.0) < 1e-12:
+                    # Grid with both endpoints: n+1 points over n intervals
+                    h = (xr - xl) / n_level
+                    x_grid = xl + np.arange(n_level + 1) * h
+                else:
+                    # Standard: n points without endpoint
+                    h = (xr - xl) / n_level
+                    x_grid = xl + (np.arange(n_level) + shift) * h
+                
                 f_vals = func(x_grid)
                 
                 # Extend and compute Fourier
@@ -1993,7 +2082,13 @@ def compare_tab():
                 # Compute grid with shift parameter
                 h = (params['xr'] - params['xl']) / n
                 shift = params.get('shift', 0.0)
-                x_grid = params['xl'] + (np.arange(n) + shift) * h
+                
+                # Special case: s=0 or s=1 → use n+1 points (both endpoints)
+                if abs(shift) < 1e-12 or abs(shift - 1.0) < 1e-12:
+                    x_grid = params['xl'] + np.arange(n + 1) * h
+                else:
+                    x_grid = params['xl'] + (np.arange(n) + shift) * h
+                
                 f_vals = func(x_grid)
                 
                 # Extend and compute Fourier coefficients
@@ -2624,19 +2719,24 @@ def main():
             h = selected_result['h']
             n = selected_result['n']
             c = selected_result['c']
-            x_grid = selected_result['x_grid']  # Already has shift applied
-            extended = selected_result['extended']
-            s = st.session_state.config.get('shift', 0.0)  # Get shift parameter
+            x_grid = selected_result['x_grid']  # Original grid used for sampling
+            extended = selected_result['extended']  # Now always n+c points
+            s = st.session_state.config.get('shift', 0.0)
+            
+            # Note: x_grid may have n+1 points (for s=0,1) but extended always has n+c
+            # We use first n points of x_grid for plotting
+            use_n_plus_1 = abs(s) < 1e-12 or abs(s - 1.0) < 1e-12
+            x_grid_plot = x_grid[:n] if use_n_plus_1 else x_grid
             
             if c == 0:
                 # No extension - just plot original grid
-                ax1.plot(x_grid, extended, 'bo', markersize=6,
+                ax1.plot(x_grid_plot, extended, 'bo', markersize=6,
                         label='Input grid function', zorder=5)
                 ax1.axvline(xl, color='gray', linestyle='--', alpha=0.6, linewidth=2,
                            label='Domain boundaries')
                 ax1.axvline(xr, color='gray', linestyle='--', alpha=0.6, linewidth=2)
             else:
-                # With extension - use SHIFTED grid throughout
+                # With extension - extended has n+c points
                 # Extended grid points (right side)
                 x_right_ext = xl + (np.arange(n, n + c) + s) * h
                 
@@ -2644,7 +2744,7 @@ def main():
                 x_left_ext = xl - (np.arange(c, 0, -1) - s) * h
                 
                 # Full extended grid for green curve
-                x_full = np.concatenate([x_left_ext, x_grid, x_right_ext])
+                x_full = np.concatenate([x_left_ext, x_grid_plot, x_right_ext])
                 f_full = np.concatenate([extended[n:], extended[:n], extended[n:]])
                 
                 # Green curve for extended function
@@ -2652,13 +2752,13 @@ def main():
                          label='Extended function', zorder=3)
                 
                 # Blue circles for input grid function
-                ax1.plot(x_grid, extended[:n], 'bo', markersize=6, 
+                ax1.plot(x_grid_plot, extended[:n], 'bo', markersize=6, 
                          label='Input grid function', zorder=5)
                 
                 # Red squares for extended grid function
-                ax1.plot(x_left_ext, extended[n:], 'rs', markersize=6, 
+                ax1.plot(x_left_ext, extended[n:n+c], 'rs', markersize=6, 
                          label='Extended grid function', zorder=5)
-                ax1.plot(x_right_ext, extended[n:], 'rs', markersize=6, zorder=5)
+                ax1.plot(x_right_ext, extended[n:n+c], 'rs', markersize=6, zorder=5)
                 
                 # Extension regions
                 ax1.axvspan(x_left_ext[0], xl, alpha=0.2, color='yellow', 
@@ -2908,8 +3008,7 @@ def main():
     <div style="text-align: center; color: #666;">
     <small>
     <b>HighFIE Lab</b> - High-Order Fourier Interpolation with Extension<br>
-    Developed at <b>Indian Institute of Technology Kanpur</b><br>
-    Built with Streamlit | Based on spectral methods for function approximation
+    Developed at <b>Indian Institute of Technology Kanpur</b>
     </small>
     </div>
     """, unsafe_allow_html=True)
