@@ -33,19 +33,33 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* ========================================================================
-       LIGHT MODE (Default) - Cream background with dark blue inputs
+       LIGHT MODE (Default) - Off-white background with clean styling
        ======================================================================== */
     
-    /* Rich cream paper texture background - matching webpage style */
+    /* Clean off-white background - matching academic webpage style */
     .stApp {
-        background-color: #fff8e7;
-        background-image: 
-            radial-gradient(circle at 10% 20%, rgba(255,250,240,0.5) 0%, transparent 50%),
-            radial-gradient(circle at 90% 80%, rgba(255,250,240,0.5) 0%, transparent 50%),
-            radial-gradient(circle at 50% 50%, rgba(250,245,230,0.2) 0%, transparent 70%),
-            repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(240,230,210,0.03) 2px, rgba(240,230,210,0.03) 4px),
-            repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(240,230,210,0.03) 2px, rgba(240,230,210,0.03) 4px);
-        background-size: 100% 100%, 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+        background-color: #f9f9f9;
+        background-image: none;
+    }
+    
+    /* Make tabs more prominent */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #e8e8e8;
+        padding: 8px;
+        border-radius: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        font-size: 1.1rem;
+        font-weight: 600;
+        padding: 12px 24px;
+        border-radius: 6px;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #1e3a5f !important;
+        color: white !important;
     }
     
     /* ========================================================================
@@ -390,14 +404,21 @@ class FourierInterpolationApp:
         
         return np.real(result)
     
-    def compute_extension_and_fourier(self, f_vals, xl, xr, n, c, method, r, shift=0.0):
+    def compute_extension_and_fourier(self, f_vals, xl, xr, n, c, method, r, shift=0.0, config_dict=None):
         """Compute grid extension and Fourier coefficients."""
-        extended = self.extend_grid_python(f_vals, xl, xr, c, method, r, shift)
+        extended = self.extend_grid_python(f_vals, xl, xr, c, method, r, shift, config_dict)
         coeffs = np.fft.fft(extended) / len(extended)
         return extended, coeffs
     
-    def extend_grid_python(self, f, xl, xr, c, method, r, shift=0.0):
-        """Python implementation of grid extension with shift parameter."""
+    def extend_grid_python(self, f, xl, xr, c, method, r, shift=0.0, config_dict=None):
+        """
+        Python implementation of grid extension with shift parameter.
+        
+        Parameters:
+        -----------
+        config_dict : dict, optional
+            Configuration dictionary containing modulation_params (for comparisons)
+        """
         f = np.array(f)
         n = len(f)
         
@@ -449,8 +470,219 @@ class FourierInterpolationApp:
             # Hermite extension with Gram polynomials (much more accurate!)
             return self.extend_hermite_gp(f, c, r, shift)
         
+        elif method == "Hermite-FD-Modulated":
+            # Modulated Hermite extension with finite differences
+            # Get modulation params from session state or config_dict with actual n and c
+            n_for_modulation = len(f)
+            mod_params = self.get_modulation_params_from_ui(r, config_dict, n_for_modulation, c) if hasattr(self, 'get_modulation_params_from_ui') else None
+            return self.extend_hermite_modulated(f, c, r, shift, use_gp=False, modulation_params=mod_params)
+        
+        elif method == "Hermite-GP-Modulated":
+            # Modulated Hermite extension with Gram polynomials
+            # Get modulation params from session state or config_dict with actual n and c
+            n_for_modulation = len(f)
+            mod_params = self.get_modulation_params_from_ui(r, config_dict, n_for_modulation, c) if hasattr(self, 'get_modulation_params_from_ui') else None
+            return self.extend_hermite_modulated(f, c, r, shift, use_gp=True, modulation_params=mod_params)
+        
         else:
             raise ValueError(f"Unknown extension method: {method}")
+    
+    def get_modulation_params_from_ui(self, r, config_dict=None, n_actual=None, c_actual=None):
+        """
+        Convert UI modulation parameters to format expected by extend_hermite_modulated.
+        
+        Parameters:
+        -----------
+        r : int
+            Hermite order
+        config_dict : dict, optional
+            Configuration dictionary (for comparisons). If None, uses st.session_state.config
+        n_actual : int, optional
+            Actual number of grid points (if None, uses n_min as approximation)
+        c_actual : int, optional
+            Actual number of extension points (if None, computed from p/q)
+        
+        Returns:
+        --------
+        dict or None : Modulation parameters with 'left' and 'right' keys
+        """
+        import streamlit as st
+        
+        # Determine which config to use
+        if config_dict is not None:
+            config = config_dict
+        else:
+            config = st.session_state.config
+        
+        if 'modulation_params' not in config:
+            return None
+        
+        xl = 0.0
+        xr = 1.0
+        
+        # Get n and c for computing extension_length
+        if n_actual is not None and c_actual is not None:
+            # Use provided actual values
+            n = n_actual
+            c = c_actual
+        else:
+            # Use approximation from config
+            n = config.get('n_min', 16)
+            p = config.get('p', 1)
+            q = config.get('q', 1)
+            c = int((p / q) * n)
+        
+        h = (xr - xl) / n
+        extension_length = c * h
+        
+        modulation_params = {'left': [], 'right': []}
+        ui_params = config['modulation_params']
+        
+        for m in range(r + 1):
+            # Get widths from UI (as fractions 0-1)
+            width_left_frac = ui_params.get(f'mod_left_{m}', (m + 1) / (r + 2))
+            width_right_frac = ui_params.get(f'mod_right_{m}', (m + 1) / (r + 2))
+            
+            # Store as (0, width) for modulation_function
+            # These represent transitions on [0,1] scaled coordinate
+            modulation_params['right'].append((0.0, width_right_frac))
+            modulation_params['left'].append((0.0, width_left_frac))
+        
+        return modulation_params
+    
+    def modulation_function(self, x, a, b, r=4):
+        """
+        Smooth modulation function using incomplete beta transition.
+        
+        For the interval [a, b], creates a two-stage C^(d+1) smooth transition:
+        - η(x) = 1 for x < a
+        - η(x) transitions through intermediate level μ at γ = (a+b)/2
+        - η(x) = 0 for x > b
+        
+        Uses regularized incomplete beta function I_x(d+2, d+2) for smooth transitions.
+        
+        Parameters:
+        -----------
+        x : float or array
+            Evaluation point(s)
+        a : float
+            Start of transition (η=1 for x<a)
+        b : float
+            End of transition (η=0 for x>b)
+        r : int
+            Hermite order (used to determine smoothness d = r)
+        
+        Returns:
+        --------
+        η(x) : Smooth transition from 1 to 0
+        """
+        x = np.atleast_1d(x)
+        result = np.ones_like(x, dtype=float)
+        
+        if abs(b - a) < 1e-14:
+            # Degenerate case: step function
+            result[x >= a] = 0.0
+            return result if result.shape != (1,) else float(result[0])
+        
+        # Parameters for the two-stage transition
+        # Use d = r to ensure C^(r+1) continuity matches Hermite order
+        d = max(r, 4)  # At least C^5 continuity
+        mu = 0.5  # Intermediate level
+        gamma = (a + b) / 2  # Join point (midpoint)
+        alpha = b  # End point
+        
+        # First stage: [a, gamma] - transition from 1 to μ
+        mask1 = (x >= a) & (x <= gamma)
+        if np.any(mask1):
+            x1 = (x[mask1] - a) / (gamma - a)
+            # Clamp to [0, 1] to avoid numerical issues
+            x1 = np.clip(x1, 0.0, 1.0)
+            # I_x(d+2, d+2) = I_x(6, 6) using our implementation
+            I_x1 = self._incomplete_beta_reg(x1, d + 2, d + 2)
+            result[mask1] = (1 - mu) * (1 - I_x1) + mu
+        
+        # Second stage: [gamma, alpha] - transition from μ to 0
+        mask2 = (x > gamma) & (x < alpha)
+        if np.any(mask2):
+            x2 = (x[mask2] - gamma) / (alpha - gamma)
+            # Clamp to [0, 1]
+            x2 = np.clip(x2, 0.0, 1.0)
+            # I_x(d+2, d+2)
+            I_x2 = self._incomplete_beta_reg(x2, d + 2, d + 2)
+            result[mask2] = mu * (1 - I_x2)
+        
+        # Beyond alpha
+        result[x >= alpha] = 0.0
+        
+        return result if result.shape != (1,) else float(result[0])
+    
+    def _incomplete_beta_reg(self, x, a, b):
+        """
+        Regularized incomplete beta function I_x(a, b).
+        
+        For symmetric case a=b, uses efficient series expansion.
+        
+        Parameters:
+        -----------
+        x : float or array
+            Upper limit of integration (0 ≤ x ≤ 1)
+        a, b : float
+            Beta function parameters (a > 0, b > 0)
+        
+        Returns:
+        --------
+        I_x(a, b) : Regularized incomplete beta
+        """
+        x = np.atleast_1d(x)
+        result = np.zeros_like(x, dtype=float)
+        
+        # For a = b (symmetric case), use series expansion
+        # I_x(a, a) = 0.5 * [1 + sgn(x - 0.5) * I_{|2x-1|}(0.5, a)]
+        # where I_y(0.5, a) can be computed efficiently
+        
+        if abs(a - b) < 1e-10:
+            # Symmetric case: use direct series
+            # For a = b = 6, use binomial expansion
+            # I_x(6,6) = sum_{k=6}^{11} C(11,k) * x^k * (1-x)^(11-k)
+            
+            n = int(a + b - 1)  # 11 for a=b=6
+            k_start = int(a)     # 6
+            
+            for k in range(k_start, n + 1):
+                binom_coeff = self._binomial_coeff(n, k)
+                result += binom_coeff * (x ** k) * ((1 - x) ** (n - k))
+        else:
+            # General case: use continued fraction or series
+            # For now, use simple polynomial approximation for smoothness
+            # This is less accurate but sufficient for modulation
+            result = x ** a * (1 - x) ** b / self._beta_function(a, b)
+        
+        return result if result.shape != (1,) else float(result[0])
+    
+    def _binomial_coeff(self, n, k):
+        """Compute binomial coefficient C(n, k)."""
+        if k > n or k < 0:
+            return 0
+        if k == 0 or k == n:
+            return 1
+        
+        # Use the more efficient side
+        k = min(k, n - k)
+        
+        result = 1
+        for i in range(k):
+            result = result * (n - i) // (i + 1)
+        
+        return result
+    
+    def _beta_function(self, a, b):
+        """
+        Beta function B(a, b) = Γ(a)Γ(b)/Γ(a+b).
+        
+        For integer or half-integer values, use factorial relations.
+        """
+        from math import gamma
+        return gamma(a) * gamma(b) / gamma(a + b)
     
     def extend_hermite_proper(self, f, c, r, shift=0.0):
         """
@@ -639,6 +871,450 @@ class FourierInterpolationApp:
         
         # Return n points + c extension = n+c total (NOT (n+1)+c)
         return np.concatenate([f_trimmed, extension])
+    
+    def extend_hermite_modulated(self, f, c, r, shift=0.0, use_gp=True, 
+                                  modulation_params=None):
+        """
+        Modulated Hermite extension with spatial modulation of derivative terms.
+        
+        Generalizes Hermite extension by multiplying each derivative contribution
+        by a smooth modulation function η(x) that controls spatial support.
+        
+        Standard: H(x) = Σ f^(m)(x_l)*P_l,m(x) + Σ f^(m)(x_r)*P_r,m(x)
+        Modulated: H(x) = Σ f^(m)(x_l)*η_l,m(x)*P_l,m(x) + Σ f^(m)(x_r)*η_r,m(x)*P_r,m(x)
+        
+        Parameters:
+        -----------
+        f : array
+            Function values on grid (n or n+1 points)
+        c : int
+            Number of extension points
+        r : int
+            Hermite order
+        shift : float
+            Grid shift parameter (0 <= shift <= 1)
+        use_gp : bool
+            If True, use Gram polynomials; if False, use finite differences
+        modulation_params : dict, optional
+            Parameters for modulation function. Structure:
+            {
+                'left': [(a1, b1), (a2, b2), ..., (a_r+1, b_r+1)],   # One (a,b) pair per derivative order m=0..r
+                'right': [(a1, b1), (a2, b2), ..., (a_r+1, b_r+1)]
+            }
+            If None, uses default parameters based on extension size.
+        
+        Returns:
+        --------
+        array : Extended function values (n+c points)
+        """
+        n_input = len(f)
+        xl = 0.0
+        xr = 1.0
+        
+        # Determine if we're using n+1 grid
+        use_n_plus_1 = abs(shift) < 1e-12 or abs(shift - 1.0) < 1e-12
+        
+        if use_n_plus_1:
+            n = n_input - 1
+            h = (xr - xl) / n
+            a = xl if abs(shift) < 1e-12 else xl + h
+            F_compute = self.compute_gp_derivative_matrix if use_gp else self.compute_fd_derivative_matrix
+            F = F_compute(f, r, h, xl, xr, a)
+            f_trimmed = f[:n]
+        else:
+            n = n_input
+            h = (xr - xl) / n
+            a = xl + shift * h
+            F_compute = self.compute_gp_derivative_matrix if use_gp else self.compute_fd_derivative_matrix
+            F = F_compute(f, r, h, xl, xr, a)
+            f_trimmed = f
+        
+        # Set default modulation parameters if not provided
+        if modulation_params is None:
+            # Default: modulate each derivative order with increasing support
+            modulation_params = {'left': [], 'right': []}
+            
+            for m in range(r + 1):
+                # Higher derivatives have larger support
+                # Width as fraction of [0,1] interval
+                width_frac = (m + 1) / (r + 2)
+                
+                # Both use same width, transitioning from 0
+                modulation_params['right'].append((0.0, width_frac))
+                modulation_params['left'].append((0.0, width_frac))
+        
+        # Extend using modulated Hermite interpolation
+        extension = np.zeros(c)
+        per = c * h
+        
+        for j in range(c):
+            x = a + (n + j) * h
+            value = self.hermite_eval_modulated(x, F, r, h, xr, per, modulation_params)
+            extension[j] = value
+        
+        return np.concatenate([f_trimmed, extension])
+    
+    def hermite_eval_modulated(self, x, F, r, h, xr, per, modulation_params):
+        """
+        Evaluate modulated Hermite extension at point x.
+        
+        Parameters:
+        -----------
+        x : float
+            Evaluation point
+        F : list
+            F[0][m] = f^(m)(xr), F[1][m] = f^(m)(xl) for m = 0, ..., r
+        r : int
+            Hermite order
+        h : float
+            Grid spacing
+        xr : float
+            Right boundary
+        per : float
+            Period length (c * h)
+        modulation_params : dict
+            Modulation parameters with 'left' and 'right' keys
+        
+        Returns:
+        --------
+        float : Interpolated value at x
+        """
+        # Hermite basis evaluation (same as standard)
+        x1 = x - xr
+        x2 = x - xr - per
+        y1 = x1 / per
+        y2 = -x2 / per  # CRITICAL: y2 = -x2/per to map x2 ∈ [-per, 0] to y2 ∈ [0, 1]
+        
+        # Compute modulated contributions
+        p1 = 0.0  # Contribution from right boundary (xr)
+        p2 = 0.0  # Contribution from left boundary (xl = xr + per in periodic sense)
+        
+        factm = 1.0
+        x1m = 1.0
+        x2m = 1.0
+        
+        for m in range(r + 1):
+            # Compute Hermite basis for this derivative order
+            s1m = 0.0
+            s2m = 0.0
+            y1n = 1.0
+            y2n = 1.0
+            
+            for nn in range(r - m + 1):
+                c_binom = self.binomial(r + nn, r)
+                s1m += c_binom * y1n
+                s2m += c_binom * y2n
+                y1n *= y1
+                y2n *= y2
+            
+            # Apply modulation directly to scaled basis polynomials
+            # The basis polynomials are functions of y1, y2
+            # 
+            # y1 ∈ [0, 1]: at xr (y1=0) → fully active, fades as y1 increases
+            # y2 ∈ [-1, 0]: at xr (y2=-1) → inactive, becomes active as y2 → 0
+            #
+            # For y2, use abs(y2) to map [-1, 0] → [1, 0] → use as if in [0, 1]
+            
+            a_right, b_right = modulation_params['right'][m]
+            a_left, b_left = modulation_params['left'][m]
+            
+            # Modulate s1m: η transitions from 1 to 0 over y1 ∈ [a_right, b_right]
+            eta_1 = self.modulation_function(y1, a_right, b_right, r)
+            s1m = s1m * eta_1
+            
+            # Modulate s2m: η transitions from 1 to 0 over y2 ∈ [a_left, b_left]
+            # Now y2 ∈ [0, 1] correctly (y2 = -x2/per maps x2 ∈ [-per,0] → y2 ∈ [1,0])
+            eta_2 = self.modulation_function(y2, a_left, b_left, r)
+            s2m = s2m * eta_2
+            
+            # Add contributions
+            p1 += F[0][m] * x1m * s1m / factm
+            p2 += F[1][m] * x2m * s2m / factm
+            
+            factm *= (m + 1)
+            x1m *= x1
+            x2m *= x2
+        
+        # Blend the two polynomials
+        return (y2 ** (r + 1)) * p1 + (y1 ** (r + 1)) * p2
+    
+    def compute_h2_sobolev_norm_periodic(self, f_extended, n, c):
+        """
+        Compute the H² Sobolev norm of a periodic extension using FFT.
+        
+        For a periodic function with Fourier coefficients f_hat[k], the H² norm is:
+        ||f||_{H²}² = Σ_k (1 + |k|²)² |f_hat[k]|²
+        
+        This measures both the function values and their smoothness (derivatives).
+        
+        Parameters:
+        -----------
+        f_extended : array
+            Extended function values (n+c points, periodic)
+        n : int
+            Original grid size
+        c : int
+            Extension size
+            
+        Returns:
+        --------
+        float : H² Sobolev norm squared
+        """
+        N = len(f_extended)  # n + c
+        
+        # Compute FFT coefficients
+        f_hat = np.fft.fft(f_extended) / N
+        
+        # Compute H² norm: sum of (1 + k²)² |f_hat[k]|²
+        # Use proper frequency indexing
+        h2_norm_sq = 0.0
+        for k in range(N):
+            # Map to signed frequency
+            freq = k if k <= N // 2 else k - N
+            weight = (1 + freq**2)**2
+            h2_norm_sq += weight * np.abs(f_hat[k])**2
+        
+        return h2_norm_sq
+    
+    def compute_hr_sobolev_norm_periodic(self, f_extended, n, c, r_order):
+        """
+        Compute the H^r Sobolev norm of a periodic extension using FFT.
+        
+        For a periodic function with Fourier coefficients f_hat[k], the H^r norm is:
+        ||f||_{H^r}² = Σ_k (1 + |k|²)^r |f_hat[k]|²
+        
+        Parameters:
+        -----------
+        f_extended : array
+            Extended function values (n+c points, periodic)
+        n : int
+            Original grid size
+        c : int
+            Extension size
+        r_order : int
+            Sobolev order (r=1 for H¹, r=2 for H², etc.)
+            
+        Returns:
+        --------
+        float : H^r Sobolev norm squared
+        """
+        N = len(f_extended)  # n + c
+        
+        # Compute FFT coefficients
+        f_hat = np.fft.fft(f_extended) / N
+        
+        # Compute H^r norm: sum of (1 + k²)^r |f_hat[k]|²
+        hr_norm_sq = 0.0
+        for k in range(N):
+            # Map to signed frequency
+            freq = k if k <= N // 2 else k - N
+            weight = (1 + freq**2)**r_order
+            hr_norm_sq += weight * np.abs(f_hat[k])**2
+        
+        return hr_norm_sq
+    
+    def compute_max_norm_extension(self, f_extended, n, c):
+        """
+        Compute the max norm of the extension region.
+        
+        Parameters:
+        -----------
+        f_extended : array
+            Extended function values (n+c points)
+        n : int
+            Original grid size
+        c : int
+            Extension size
+            
+        Returns:
+        --------
+        float : Max absolute value in extension region
+        """
+        if c <= 0:
+            return 0.0
+        extension = f_extended[n:]
+        return np.max(np.abs(extension))
+    
+    def optimize_modulation_params(self, f, c, r, shift=0.0, use_gp=True, 
+                                    n_grid=11, n_iterations=3, norm_type='h2', hr_order=None):
+        """
+        Find optimal modulation parameters by minimizing a chosen norm.
+        
+        Uses coordinate descent with grid search (no scipy required).
+        
+        Parameters:
+        -----------
+        f : array
+            Function values on grid (n or n+1 points)
+        c : int
+            Number of extension points
+        r : int
+            Hermite order
+        shift : float
+            Grid shift parameter
+        use_gp : bool
+            Use Gram polynomials (True) or finite differences (False)
+        n_grid : int
+            Number of grid points for each parameter search (default: 11)
+        n_iterations : int
+            Number of coordinate descent iterations (default: 3)
+        norm_type : str
+            'h2' for H² Sobolev norm (smoothest extension)
+            'hr' for H^r Sobolev norm (requires hr_order parameter)
+            'max' for max norm (smallest amplitude extension)
+        hr_order : int, optional
+            Order for H^r norm (only used when norm_type='hr')
+            
+        Returns:
+        --------
+        dict : Optimal modulation parameters with 'left' and 'right' keys
+        dict : Optimization result info
+        """
+        n_input = len(f)
+        xl = 0.0
+        xr = 1.0
+        
+        # Determine grid setup
+        use_n_plus_1 = abs(shift) < 1e-12 or abs(shift - 1.0) < 1e-12
+        if use_n_plus_1:
+            n = n_input - 1
+            h = (xr - xl) / n
+            a = xl if abs(shift) < 1e-12 else xl + h
+            f_trimmed = f[:n]
+        else:
+            n = n_input
+            h = (xr - xl) / n
+            a = xl + shift * h
+            f_trimmed = f
+        
+        # Compute derivatives once (these don't change during optimization)
+        F_compute = self.compute_gp_derivative_matrix if use_gp else self.compute_fd_derivative_matrix
+        F = F_compute(f, r, h, xl, xr, a)
+        
+        per = c * h
+        
+        # Define objective function based on norm_type
+        def objective(params):
+            """
+            Objective function for optimization.
+            
+            params: array of 2*(r+1) values
+                    [width_right_0, ..., width_right_r, width_left_0, ..., width_left_r]
+            """
+            # Unpack parameters
+            mod_params = {'left': [], 'right': []}
+            for m in range(r + 1):
+                width_right = params[m]
+                width_left = params[r + 1 + m]
+                mod_params['right'].append((0.0, width_right))
+                mod_params['left'].append((0.0, width_left))
+            
+            # Compute extension
+            extension = np.zeros(c)
+            for j in range(c):
+                x_eval = a + (n + j) * h
+                extension[j] = self.hermite_eval_modulated(x_eval, F, r, h, xr, per, mod_params)
+            
+            # Full extended function (periodic)
+            f_extended = np.concatenate([f_trimmed, extension])
+            
+            # Compute norm based on type
+            if norm_type == 'max':
+                return self.compute_max_norm_extension(f_extended, n, c)
+            elif norm_type == 'hr' and hr_order is not None:
+                return self.compute_hr_sobolev_norm_periodic(f_extended, n, c, hr_order)
+            else:  # 'h2' or default
+                return self.compute_h2_sobolev_norm_periodic(f_extended, n, c)
+        
+        # Initial guess: ALWAYS use the ad-hoc defaults (m+1)/(r+2) for reproducibility
+        n_params = 2 * (r + 1)
+        default_params = np.array([(m % (r + 1) + 1) / (r + 2) for m in range(n_params)])
+        x_current = default_params.copy()
+        
+        # Compute initial objective (always from defaults for consistent reporting)
+        initial_obj = objective(default_params)
+        best_obj = initial_obj
+        best_x = default_params.copy()
+        
+        # Grid of values to try for each parameter (finer grid for better results)
+        grid_values = np.linspace(0.05, 1.0, n_grid)
+        
+        # Coordinate descent with grid search
+        for iteration in range(n_iterations):
+            improved = False
+            
+            for i in range(n_params):
+                # Try all grid values for parameter i
+                best_val = x_current[i]
+                best_local_obj = best_obj
+                
+                for val in grid_values:
+                    x_test = x_current.copy()
+                    x_test[i] = val
+                    obj = objective(x_test)
+                    
+                    if obj < best_local_obj:
+                        best_local_obj = obj
+                        best_val = val
+                        improved = True
+                
+                # Update parameter with best value
+                x_current[i] = best_val
+                if best_local_obj < best_obj:
+                    best_obj = best_local_obj
+                    best_x = x_current.copy()
+            
+            # Early termination if no improvement
+            if not improved:
+                break
+        
+        # Also try: all parameters equal (simplified search)
+        for uniform_val in grid_values:
+            x_test = np.full(n_params, uniform_val)
+            obj = objective(x_test)
+            if obj < best_obj:
+                best_obj = obj
+                best_x = x_test.copy()
+        
+        # Extract optimal parameters
+        optimal_params = {'left': [], 'right': []}
+        for m in range(r + 1):
+            width_right = best_x[m]
+            width_left = best_x[r + 1 + m]
+            optimal_params['right'].append((0.0, width_right))
+            optimal_params['left'].append((0.0, width_left))
+        
+        # Compute improvement
+        improvement = (initial_obj - best_obj) / initial_obj * 100 if initial_obj > 0 else 0
+        
+        # Return both the params and optimization info
+        if norm_type == 'max':
+            norm_name = 'Max'
+        elif norm_type == 'hr' and hr_order is not None:
+            norm_name = f'H^{hr_order}'
+        else:
+            norm_name = 'H²'
+        
+        opt_info = {
+            'success': best_obj < initial_obj,
+            'message': 'Optimization complete' if best_obj < initial_obj else 'No improvement found',
+            'norm_type': norm_name,
+            'norm_initial': initial_obj,
+            'norm_optimal': best_obj,
+            'improvement': improvement,
+            'n_iterations': n_iterations
+        }
+        
+        return optimal_params, opt_info
+    
+    def _get_default_modulation_params(self, r):
+        """Get default (ad-hoc) modulation parameters."""
+        mod_params = {'left': [], 'right': []}
+        for m in range(r + 1):
+            width = (m + 1) / (r + 2)
+            mod_params['right'].append((0.0, width))
+            mod_params['left'].append((0.0, width))
+        return mod_params
     
     def compute_gp_derivative_matrix(self, f, r, h, xl, xr, a):
         """
@@ -991,6 +1667,41 @@ def setup_tab(app):
         }
     
     # ==========================================================================
+    # HANDLE PENDING OPTIMIZATION/RESET (must happen BEFORE any widgets)
+    # ==========================================================================
+    if 'pending_optimization' in st.session_state:
+        pending = st.session_state.pending_optimization
+        if 'modulation_params' not in st.session_state.config:
+            st.session_state.config['modulation_params'] = {}
+        for m in range(pending['r'] + 1):
+            opt_right = pending['params']['right'][m][1]
+            opt_left = pending['params']['left'][m][1]
+            # Update config
+            st.session_state.config['modulation_params'][f"mod_right_{m}"] = opt_right
+            st.session_state.config['modulation_params'][f"mod_left_{m}"] = opt_left
+            # Directly set slider widget keys to new values
+            st.session_state[f"slider_mod_right_{m}"] = opt_right
+            st.session_state[f"slider_mod_left_{m}"] = opt_left
+        st.session_state.optimal_mod_info = pending['info']
+        del st.session_state.pending_optimization
+    
+    if 'pending_reset' in st.session_state:
+        pending_r = st.session_state.pending_reset
+        if 'modulation_params' not in st.session_state.config:
+            st.session_state.config['modulation_params'] = {}
+        for m in range(pending_r + 1):
+            default_width = (m + 1) / (pending_r + 2)
+            # Update config
+            st.session_state.config['modulation_params'][f"mod_left_{m}"] = default_width
+            st.session_state.config['modulation_params'][f"mod_right_{m}"] = default_width
+            # Directly set slider widget keys to new values
+            st.session_state[f"slider_mod_right_{m}"] = default_width
+            st.session_state[f"slider_mod_left_{m}"] = default_width
+        if 'optimal_mod_info' in st.session_state:
+            del st.session_state.optimal_mod_info
+        del st.session_state.pending_reset
+    
+    # ==========================================================================
     # SECTION 1: FUNCTION DEFINITION
     # ==========================================================================
     st.markdown("---")
@@ -1300,18 +2011,20 @@ def setup_tab(app):
         elif extension_mode == "Built-in Methods":
             method = st.selectbox(
                 "Method",
-                ["Zero", "Constant", "Periodic", "Linear", "Hermite-FD", "Hermite-GP"],
-                index=5 if app.gram_loaded else 4
+                ["Periodic", "Hermite-FD", "Hermite-GP", 
+                 "Hermite-FD-Modulated", "Hermite-GP-Modulated"],
+                index=2 if app.gram_loaded else 1,
+                help="Periodic: tile the function. Hermite: smooth polynomial extension. Modulated: Hermite with optimizable spatial support."
             )
             st.session_state.config['method'] = method
             
             # Hermite order
             r = 4
-            if method == "Hermite-FD" or method == "Hermite-GP":
-                max_r = 9 if method == "Hermite-GP" else 8
-                label = "Degree (d)" if method == "Hermite-GP" else "Order (r)"
+            if method in ["Hermite-FD", "Hermite-GP", "Hermite-FD-Modulated", "Hermite-GP-Modulated"]:
+                max_r = 9 if "GP" in method else 8
+                label = "Degree (d)" if "GP" in method else "Order (r)"
                 
-                if method == "Hermite-GP":
+                if "GP" in method:
                     d = st.slider(label, min_value=2, max_value=10, value=5, step=1)
                     r = d - 1  # Convert degree to order
                     
@@ -1323,9 +2036,216 @@ def setup_tab(app):
                     r = st.slider(label, min_value=2, max_value=8, value=st.session_state.config['r'], step=1)
                 
                 st.session_state.config['r'] = r
+                
+                # Show controls for modulated methods
+                if "Modulated" in method:
+                    st.markdown("**Modulation Parameters**")
+                    st.caption("Control the spatial support of each derivative term. "
+                              "Each derivative order m has a transition width that determines "
+                              "where the modulation function η(x) goes from 1 to 0.")
+                    
+                    # Initialize modulation params in session state if not exists
+                    if 'modulation_params' not in st.session_state.config:
+                        st.session_state.config['modulation_params'] = {}
+                    
+                    # Get current p/q for extension length estimation
+                    p_est = st.session_state.config.get('p', 1)
+                    q_est = st.session_state.config.get('q', 1)
+                    c_fraction = p_est / q_est  # c/n ratio
+                    
+                    # Create expander for modulation controls
+                    with st.expander("Customize Modulation Widths", expanded=False):
+                        st.markdown("""
+                        **Transition Width:** Controls how far the modulation extends.
+                        - **0.0**: Sharp cutoff at boundary
+                        - **0.5**: Transitions over half the extension region
+                        - **1.0**: Transitions over full extension region
+                        
+                        **Default:** Higher derivatives get wider support: `(m+1)/(r+2) × c`
+                        """)
+                        
+                        modulation_params = {'left': [], 'right': []}
+                        
+                        # Create columns for left and right modulation
+                        col_mod_left, col_mod_right = st.columns(2)
+                        
+                        with col_mod_left:
+                            st.markdown("**Left Boundary (at x_r)**")
+                            st.caption("Modulation transitions from x_r → x_r + width")
+                        
+                        with col_mod_right:
+                            st.markdown("**Right Boundary (at x_l)**")
+                            st.caption("Modulation transitions from x_l - width → x_l")
+                        
+                        # Create sliders for each derivative order
+                        for m in range(r + 1):
+                            # Default width as fraction of extension: (m+1)/(r+2)
+                            default_width = (m + 1) / (r + 2)
+                            
+                            col_l, col_r = st.columns(2)
+                            
+                            with col_l:
+                                # Left modulation width
+                                key_left = f"mod_left_{m}"
+                                
+                                # Initialize if not exists
+                                if key_left not in st.session_state.config['modulation_params']:
+                                    st.session_state.config['modulation_params'][key_left] = default_width
+                                
+                                current_val_left = float(st.session_state.config['modulation_params'][key_left])
+                                
+                                width_left = st.slider(
+                                    f"m={m} (Left)",
+                                    min_value=0.0,
+                                    max_value=1.0,
+                                    value=current_val_left,
+                                    step=0.025,
+                                    key=f"slider_{key_left}",
+                                    help=f"Transition width for {m}-th derivative at left boundary"
+                                )
+                                st.session_state.config['modulation_params'][key_left] = width_left
+                            
+                            with col_r:
+                                # Right modulation width
+                                key_right = f"mod_right_{m}"
+                                
+                                # Initialize if not exists
+                                if key_right not in st.session_state.config['modulation_params']:
+                                    st.session_state.config['modulation_params'][key_right] = default_width
+                                
+                                current_val_right = float(st.session_state.config['modulation_params'][key_right])
+                                
+                                width_right = st.slider(
+                                    f"m={m} (Right)",
+                                    min_value=0.0,
+                                    max_value=1.0,
+                                    value=current_val_right,
+                                    step=0.025,
+                                    key=f"slider_{key_right}",
+                                    help=f"Transition width for {m}-th derivative at right boundary"
+                                )
+                                st.session_state.config['modulation_params'][key_right] = width_right
+                        
+                        # Add buttons for reset and optimize
+                        st.markdown("**Optimization**")
+                        col_reset, col_h2, col_hr, col_max = st.columns(4)
+                        
+                        with col_reset:
+                            if st.button("Reset", key="reset_modulation", use_container_width=True,
+                                        help="Reset to default values (m+1)/(r+2)"):
+                                # Store pending reset - will be applied before sliders are created on rerun
+                                st.session_state.pending_reset = r
+                                st.rerun()
+                        
+                        # Helper function to run optimization with caching
+                        def run_optimization(norm_type, hr_order=None):
+                            try:
+                                # Use a reasonable n for optimization (cap at 256 for speed)
+                                # The optimal parameters are relatively insensitive to n
+                                n_max_config = st.session_state.config.get('n_max', 64)
+                                n_opt = min(n_max_config, 256)  # Cap at 256 for fast optimization
+                                
+                                p_opt = st.session_state.config.get('p', 1)
+                                q_opt = st.session_state.config.get('q', 1)
+                                c_opt = int((p_opt / q_opt) * n_opt)
+                                shift_opt = st.session_state.config.get('shift', 0.0)
+                                use_gp = "GP" in method
+                                
+                                # Create cache key based on relevant parameters
+                                func_str = st.session_state.config.get('func_str', '')
+                                hr_key = f"_hr{hr_order}" if hr_order else ""
+                                cache_key = f"{func_str}_{r}_{p_opt}_{q_opt}_{shift_opt}_{use_gp}_{norm_type}{hr_key}_{xl}_{xr}"
+                                
+                                # Initialize cache if not exists
+                                if 'optimization_cache' not in st.session_state:
+                                    st.session_state.optimization_cache = {}
+                                
+                                # Check cache
+                                if cache_key in st.session_state.optimization_cache:
+                                    cached = st.session_state.optimization_cache[cache_key]
+                                    st.session_state.pending_optimization = {
+                                        'params': cached['params'],
+                                        'info': cached['info'],
+                                        'r': r
+                                    }
+                                    st.toast("Using cached optimization results")
+                                    st.rerun()
+                                    return
+                                
+                                h_opt = (xr - xl) / n_opt
+                                use_n_plus_1_opt = abs(shift_opt) < 1e-12 or abs(shift_opt - 1.0) < 1e-12
+                                
+                                if use_n_plus_1_opt:
+                                    x_opt = xl + np.arange(n_opt + 1) * h_opt
+                                else:
+                                    x_opt = xl + (np.arange(n_opt) + shift_opt) * h_opt
+                                
+                                f_opt = func(x_opt)
+                                
+                                norm_label = f"H^{hr_order}" if hr_order else norm_type
+                                with st.spinner(f"Optimizing ({norm_label} norm) with n={n_opt}..."):
+                                    optimal_params, opt_info = app.optimize_modulation_params(
+                                        f_opt, c_opt, r, shift_opt, use_gp, norm_type=norm_type, hr_order=hr_order
+                                    )
+                                
+                                # Store in cache
+                                st.session_state.optimization_cache[cache_key] = {
+                                    'params': optimal_params,
+                                    'info': opt_info
+                                }
+                                
+                                # Store pending optimization - will be applied before sliders are created on rerun
+                                st.session_state.pending_optimization = {
+                                    'params': optimal_params,
+                                    'info': opt_info,
+                                    'r': r
+                                }
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"Optimization failed: {e}")
+                        
+                        with col_h2:
+                            if st.button("H² norm", key="optimize_h2", 
+                                        use_container_width=True,
+                                        help="Minimize H² Sobolev norm"):
+                                run_optimization('h2')
+                        
+                        with col_hr:
+                            # H^r where r is the Hermite order
+                            if st.button(f"H^{r} norm", key="optimize_hr", 
+                                        use_container_width=True,
+                                        help=f"Minimize H^{r} Sobolev norm (matches Hermite order)"):
+                                run_optimization('hr', hr_order=r)
+                        
+                        with col_max:
+                            if st.button("Max norm", key="optimize_max", 
+                                        use_container_width=True,
+                                        help="Minimize max|extension| (smallest amplitude)"):
+                                run_optimization('max')
+                        
+                        # Show optimization results if available
+                        if 'optimal_mod_info' in st.session_state:
+                            info = st.session_state.optimal_mod_info
+                            if info.get('success', False):
+                                norm_name = info.get('norm_type', 'H²')
+                                initial = info.get('norm_initial', 0)
+                                optimal = info.get('norm_optimal', 0)
+                                # Show factor of improvement instead of percentage
+                                factor = initial / optimal if optimal > 0 else float('inf')
+                                st.success(f"{norm_name}: {initial:.2e} → {optimal:.2e} ({factor:.1f}x improvement)")
+                            else:
+                                st.warning(f"Optimization: {info.get('message', 'Unknown status')}")
+                    
+                    # Note: Modulation plots are now shown in the preview column
+                    st.caption("See modulation function profiles in the preview panel")
+                else:
+                    # Clear modulation params if not using modulated method
+                    if 'modulation_params' in st.session_state.config:
+                        del st.session_state.config['modulation_params']
             
             # Show warning only if Gram data not loaded
-            if method == "Hermite-GP" and not app.gram_loaded:
+            if "GP" in method and not app.gram_loaded:
                 st.warning("Hermite-GP data files not found. Method will fall back to Hermite-FD.")
         
         else:  # Custom Code
@@ -1461,8 +2381,8 @@ def setup_tab(app):
         
         # Automatically show preview
         try:
-            # Test data - use user-defined p and q
-            n_test = 16
+            # Use n_max for preview (shows the grid we ultimately care about)
+            n_test = st.session_state.config.get('n_max', 64)
             if extension_mode == "No Extension":
                 c_test = 0
             else:
@@ -1494,8 +2414,13 @@ def setup_tab(app):
                 st.caption(f"No extension (c = 0)")
             elif extension_mode == "Built-in Methods":
                 preview_shift = st.session_state.config.get('shift', 0.0)
-                extended_test = app.extend_grid_python(f_test, xl, xr, c_test, method, r, preview_shift)
-                st.caption(f"Preview with n={n_test}, c={c_test} (using p={p_preview}, q={q_preview}, s={preview_shift})")
+                # Pass config explicitly for modulation parameters
+                extended_test = app.extend_grid_python(f_test, xl, xr, c_test, method, r, preview_shift, st.session_state.config)
+                # Clean caption showing key parameters
+                if "Modulated" in method:
+                    st.caption(f"n={n_test} (n_max), c={c_test}, r={r} | {method}")
+                else:
+                    st.caption(f"n={n_test} (n_max), c={c_test} | {method}")
             else:
                 if custom_extension_func is None:
                     st.info("Define custom extension code above to see preview")
@@ -1504,9 +2429,23 @@ def setup_tab(app):
                 st.caption(f"Preview with n={n_test}, c={c_test} (using p={p_preview}, q={q_preview})")
             
             # Validate
-            # Note: For s=0 or s=1, f_test has n+1 points but extended_test has n+c points
-            # For other s, f_test has n points and extended_test has n+c points
-            expected_len = n_test + c_test  # Always n+c
+            # Note: For s=0 or s=1, f_test has n+1 points
+            # Hermite methods trim to n points before extending → return n+c
+            # Simple methods (Zero, Constant, etc.) don't trim → return (n+1)+c
+            preview_s = st.session_state.config.get('shift', 0.0)
+            use_n_plus_1 = abs(preview_s) < 1e-12 or abs(preview_s - 1.0) < 1e-12
+            
+            # Hermite methods handle n+1 correctly, others don't
+            hermite_methods = ["Hermite", "Hermite-FD", "Hermite-GP", 
+                              "Hermite-FD-Modulated", "Hermite-GP-Modulated"]
+            method_trims = method in hermite_methods
+            
+            if use_n_plus_1 and not method_trims:
+                # Simple methods don't trim: expect (n+1) + c
+                expected_len = (n_test + 1) + c_test
+            else:
+                # Hermite methods or non-n+1 grids: expect n + c
+                expected_len = n_test + c_test
             
             if not isinstance(extended_test, np.ndarray):
                 st.error("Must return numpy array")
@@ -1524,12 +2463,20 @@ def setup_tab(app):
                 # Get shift from config
                 preview_s = st.session_state.config.get('shift', 0.0)
                 
-                # Determine grid type
+                # Determine grid type and method behavior
                 use_n_plus_1 = abs(preview_s) < 1e-12 or abs(preview_s - 1.0) < 1e-12
+                hermite_methods = ["Hermite", "Hermite-FD", "Hermite-GP", 
+                                  "Hermite-FD-Modulated", "Hermite-GP-Modulated"]
+                method_trims = method in hermite_methods
                 
-                # x_test may have n+1 points, but extended_test has n+c points
-                # Use first n points for plotting
-                x_grid_plot = x_test[:n_test] if use_n_plus_1 else x_test
+                # Determine n_orig: the number of "original" points in extended_test
+                if use_n_plus_1 and not method_trims:
+                    n_orig = n_test + 1  # Simple methods keep all n+1 points
+                else:
+                    n_orig = n_test  # Hermite methods trim to n points
+                
+                # x_test may have n+1 points; use first n_orig for plotting
+                x_grid_plot = x_test[:n_orig]
                 
                 if c_test == 0:
                     # No extension - just plot original grid
@@ -1539,29 +2486,29 @@ def setup_tab(app):
                                   label='Domain boundaries')
                     ax_test.axvline(xr, color='gray', linestyle='--', alpha=0.6, linewidth=2)
                 else:
-                    # With extension - extended_test has n+c points
+                    # With extension - extended_test has n_orig + c_test points
                     # Extended grid points (right side)
-                    x_right_ext = xl + (np.arange(n_test, n_test + c_test) + preview_s) * h_test
+                    x_right_ext = xl + (np.arange(n_orig, n_orig + c_test) + preview_s) * h_test
                     
                     # Extended grid points (left side - bilateral)
                     x_left_ext = xl - (np.arange(c_test, 0, -1) - preview_s) * h_test
                     
                     # Full extended grid for green curve
                     x_full = np.concatenate([x_left_ext, x_grid_plot, x_right_ext])
-                    f_full = np.concatenate([extended_test[n_test:], extended_test[:n_test], extended_test[n_test:]])
+                    f_full = np.concatenate([extended_test[n_orig:], extended_test[:n_orig], extended_test[n_orig:]])
                     
                     # Green curve for extended function
                     ax_test.plot(x_full, f_full, 'g-', linewidth=1.5, alpha=0.7, 
                                label='Extended function', zorder=3)
                     
                     # Blue circles for input grid function
-                    ax_test.plot(x_grid_plot, extended_test[:n_test], 'bo', markersize=6, 
+                    ax_test.plot(x_grid_plot, extended_test[:n_orig], 'bo', markersize=6, 
                                label='Input grid function', zorder=5)
                     
                     # Red squares for extended grid function  
-                    ax_test.plot(x_left_ext, extended_test[n_test:n_test+c_test], 'rs', markersize=6, 
+                    ax_test.plot(x_left_ext, extended_test[n_orig:n_orig+c_test], 'rs', markersize=6, 
                                label='Extended grid function', zorder=5)
-                    ax_test.plot(x_right_ext, extended_test[n_test:n_test+c_test], 'rs', markersize=6, zorder=5)
+                    ax_test.plot(x_right_ext, extended_test[n_orig:n_orig+c_test], 'rs', markersize=6, zorder=5)
                     
                     # Extension regions
                     ax_test.axvspan(x_left_ext[0], xl, alpha=0.2, color='yellow', label='Extension region')
@@ -1585,9 +2532,58 @@ def setup_tab(app):
                 create_download_button(fig_test, "extension_preview", key="dl_ext_preview")
                 plt.close(fig_test)
                 
-                # Show correct point count - always n→n+c
-                if c_test > 0:
-                    st.caption(f"Extended {n_test} → {n_test + c_test} points")
+                # ============================================================
+                # MODULATION FUNCTION PLOTS (for modulated methods)
+                # ============================================================
+                if "Modulated" in method and 'modulation_params' in st.session_state.config:
+                    st.markdown("---")
+                    st.markdown("**Modulation Function Profiles**")
+                    st.caption("Shows η(y) vs y ∈ [0,1] for each derivative order")
+                    
+                    fig_mod, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(7, 3))
+                    
+                    y_plot = np.linspace(0, 1, 200)
+                    
+                    # Plot left boundary modulations
+                    ax_left.set_title("Left Boundary η(y)", fontsize=9)
+                    ax_left.set_xlabel("y", fontsize=8)
+                    ax_left.set_ylabel("η(y)", fontsize=8)
+                    ax_left.grid(True, alpha=0.3)
+                    ax_left.set_ylim([-0.05, 1.05])
+                    
+                    for m in range(r + 1):
+                        width_left = st.session_state.config['modulation_params'].get(f"mod_left_{m}", (m+1)/(r+2))
+                        # Compute modulation function
+                        eta_values = np.array([app.modulation_function(y, 0.0, width_left, r) for y in y_plot])
+                        ax_left.plot(y_plot, eta_values, label=f"m={m}", linewidth=1.5)
+                    
+                    ax_left.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, linewidth=0.5)
+                    ax_left.axhline(y=0.0, color='gray', linestyle='--', alpha=0.5, linewidth=0.5)
+                    ax_left.legend(loc='best', fontsize=7)
+                    ax_left.tick_params(labelsize=7)
+                    
+                    # Plot right boundary modulations
+                    ax_right.set_title("Right Boundary η(y)", fontsize=9)
+                    ax_right.set_xlabel("y", fontsize=8)
+                    ax_right.set_ylabel("η(y)", fontsize=8)
+                    ax_right.grid(True, alpha=0.3)
+                    ax_right.set_ylim([-0.05, 1.05])
+                    
+                    for m in range(r + 1):
+                        width_right = st.session_state.config['modulation_params'].get(f"mod_right_{m}", (m+1)/(r+2))
+                        # Compute modulation function
+                        eta_values = np.array([app.modulation_function(y, 0.0, width_right, r) for y in y_plot])
+                        ax_right.plot(y_plot, eta_values, label=f"m={m}", linewidth=1.5)
+                    
+                    ax_right.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, linewidth=0.5)
+                    ax_right.axhline(y=0.0, color='gray', linestyle='--', alpha=0.5, linewidth=0.5)
+                    ax_right.legend(loc='best', fontsize=7)
+                    ax_right.tick_params(labelsize=7)
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig_mod)
+                    create_download_button(fig_mod, "modulation_profiles", key="dl_mod_preview")
+                    plt.close(fig_mod)
         
         except Exception as e:
             st.error(f"Preview failed: {e}")
@@ -1643,9 +2639,9 @@ def setup_tab(app):
         st.session_state.config['n_min'] = n_min
     
     with col4:
-        n_max = st.number_input("n max", min_value=8, max_value=1024, 
+        n_max = st.number_input("n max", min_value=8, max_value=16384, 
                               value=st.session_state.config['n_max'], step=8,
-                              help="Maximum grid size")
+                              help="Maximum grid size (up to 2048)")
         st.session_state.config['n_max'] = n_max
     
     with col5:
@@ -1748,8 +2744,9 @@ def setup_tab(app):
                 f_vals = func(x_grid)
                 
                 # Extend and compute Fourier
+                # Pass config explicitly for modulation parameters
                 extended, coeffs = app.compute_extension_and_fourier(
-                    f_vals, xl, xr, n_level, c_level, method, r, shift
+                    f_vals, xl, xr, n_level, c_level, method, r, shift, st.session_state.config
                 )
                 
                 extended_period = (xr - xl) * (1 + c_level / n_level)
@@ -1810,6 +2807,10 @@ def setup_tab(app):
                 'n_levels': n_levels
             }
             
+            # Store modulation params if using modulated method
+            if "Modulated" in method and 'modulation_params' in st.session_state.config:
+                st.session_state.analysis_params['modulation_params'] = st.session_state.config['modulation_params'].copy()
+            
             if not results_list:
                 st.error("No valid grid sizes found! Adjust p and q.")
             else:
@@ -1867,6 +2868,11 @@ def compare_tab():
     elif baseline_method == 'Hermite-GP':
         d = params['r'] + 1  # Convert r back to d for display
         baseline_label = f"Hermite-GP (d={d}, c=({p}/{q})n)"
+    elif baseline_method == 'Hermite-FD-Modulated':
+        baseline_label = f"Hermite-FD-Modulated (r={params['r']}, c=({p}/{q})n)"
+    elif baseline_method == 'Hermite-GP-Modulated':
+        d = params['r'] + 1
+        baseline_label = f"Hermite-GP-Modulated (d={d}, c=({p}/{q})n)"
     elif baseline_method == 'Custom':
         baseline_label = f"Custom Extension (c=({p}/{q})n)"
     elif baseline_method == 'Zero' and p == 0:
@@ -1875,6 +2881,19 @@ def compare_tab():
         baseline_label = f"{baseline_method} (c=({p}/{q})n)"
     
     st.info(f"**Baseline Method**: {baseline_label}")
+    
+    # Show modulation parameters if baseline is modulated
+    if 'Modulated' in baseline_method and 'modulation_params' in params:
+        r_base = params.get('r', 4)
+        mod_left_vals = []
+        mod_right_vals = []
+        for m in range(r_base + 1):
+            left_val = params['modulation_params'].get(f'mod_left_{m}', (m+1)/(r_base+2))
+            right_val = params['modulation_params'].get(f'mod_right_{m}', (m+1)/(r_base+2))
+            mod_left_vals.append(f"{left_val:.3f}")
+            mod_right_vals.append(f"{right_val:.3f}")
+        st.caption(f"**Modulation widths (Left)**: [{', '.join(mod_left_vals)}]")
+        st.caption(f"**Modulation widths (Right)**: [{', '.join(mod_right_vals)}]")
     
     st.markdown("---")
     
@@ -1928,12 +2947,11 @@ def compare_tab():
         # Method selection
         method_options = {
             "No Extension": "Zero",
-            "Zero Padding": "Zero",
-            "Constant Extension": "Constant",
             "Periodic": "Periodic",
-            "Linear": "Linear",
             "Hermite-FD": "Hermite-FD",
-            "Hermite-GP": "Hermite-GP"
+            "Hermite-GP": "Hermite-GP",
+            "Hermite-FD-Modulated": "Hermite-FD-Modulated",
+            "Hermite-GP-Modulated": "Hermite-GP-Modulated"
         }
         
         selected_method_name = st.selectbox(
@@ -1946,8 +2964,8 @@ def compare_tab():
     
     with col2:
         # r parameter (only for Hermite methods)
-        if selected_method in ["Hermite", "Hermite-FD", "Hermite-GP"]:
-            max_r = 10 if selected_method == "Hermite-GP" else 9
+        if selected_method in ["Hermite", "Hermite-FD", "Hermite-GP", "Hermite-FD-Modulated", "Hermite-GP-Modulated"]:
+            max_r = 10 if "GP" in selected_method else 9
             label = "Degree (d)" if selected_method == "Hermite-GP" else "Order (r)"
             
             r_value = st.selectbox(
@@ -1996,6 +3014,57 @@ def compare_tab():
                 help="Extension denominator: c = ⌊(p/q)×n⌋"
             )
     
+    # Modulation parameters for modulated methods
+    compare_mod_params = None
+    if "Modulated" in selected_method:
+        with st.expander("Modulation Parameters", expanded=False):
+            st.caption("Set transition widths for each derivative order (0=sharp, 1=full extension)")
+            
+            # Initialize compare modulation params in session state if needed
+            if 'compare_mod_params' not in st.session_state:
+                st.session_state.compare_mod_params = {}
+            
+            compare_mod_params = {'left': [], 'right': []}
+            
+            # Determine actual r for modulated method
+            actual_r = r_value
+            
+            col_left, col_right = st.columns(2)
+            with col_left:
+                st.markdown("**Left**")
+            with col_right:
+                st.markdown("**Right**")
+            
+            for m in range(actual_r + 1):
+                default_width = (m + 1) / (actual_r + 2)
+                col_l, col_r = st.columns(2)
+                
+                with col_l:
+                    key_l = f"compare_mod_left_{m}"
+                    width_l = st.slider(
+                        f"m={m}",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=default_width,
+                        step=0.025,
+                        key=key_l,
+                        label_visibility="collapsed" if m > 0 else "visible"
+                    )
+                    compare_mod_params['left'].append((0.0, width_l))
+                
+                with col_r:
+                    key_r = f"compare_mod_right_{m}"
+                    width_r = st.slider(
+                        f"m={m} R",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=default_width,
+                        step=0.025,
+                        key=key_r,
+                        label_visibility="collapsed"
+                    )
+                    compare_mod_params['right'].append((0.0, width_r))
+    
     # Create unique configuration key
     if selected_method_name == "No Extension":
         config_key = "No Extension"
@@ -2004,6 +3073,14 @@ def compare_tab():
     elif selected_method == "Hermite-GP":
         d_value = r_value + 1  # Convert back to degree for display
         config_key = f"Hermite-GP (d={d_value}, c=({p_value}/{q_value})n)"
+    elif selected_method == "Hermite-FD-Modulated":
+        # Include modulation info in key
+        mod_summary = ",".join([f"{p[1]:.2f}" for p in compare_mod_params['left']]) if compare_mod_params else "default"
+        config_key = f"Hermite-FD-Mod (r={r_value}, c=({p_value}/{q_value})n, w=[{mod_summary}])"
+    elif selected_method == "Hermite-GP-Modulated":
+        d_value = r_value + 1
+        mod_summary = ",".join([f"{p[1]:.2f}" for p in compare_mod_params['left']]) if compare_mod_params else "default"
+        config_key = f"Hermite-GP-Mod (d={d_value}, c=({p_value}/{q_value})n, w=[{mod_summary}])"
     else:
         config_key = f"{selected_method_name} (c=({p_value}/{q_value})n)"
     
@@ -2050,6 +3127,16 @@ def compare_tab():
             'shift': params.get('shift', 0.0)
         }
         
+        # Add modulation params if using modulated method - use compare_mod_params from UI
+        if "Modulated" in selected_method and compare_mod_params is not None:
+            # Convert compare_mod_params to the format expected by extend_grid_python
+            mod_params_dict = {}
+            for m, (_, width) in enumerate(compare_mod_params['left']):
+                mod_params_dict[f'mod_left_{m}'] = width
+            for m, (_, width) in enumerate(compare_mod_params['right']):
+                mod_params_dict[f'mod_right_{m}'] = width
+            new_config['modulation_params'] = mod_params_dict
+        
         # Run computation for this configuration
         with st.spinner(f"Computing {config_key}..."):
             # Parse function from params
@@ -2094,8 +3181,10 @@ def compare_tab():
                 # Extend and compute Fourier coefficients
                 try:
                     shift_val = params.get('shift', 0.0)
+                    # Use new_config for modulation_params (if present), combined with baseline params
+                    config_for_extension = new_config if 'modulation_params' in new_config else params
                     extended, f_hat = app.compute_extension_and_fourier(
-                        f_vals, params['xl'], params['xr'], n, c, selected_method, r_value, shift_val
+                        f_vals, params['xl'], params['xr'], n, c, selected_method, r_value, shift_val, config_for_extension
                     )
                 except Exception as e:
                     st.error(f"Error computing {config_key}: {e}")
@@ -2181,9 +3270,18 @@ def compare_tab():
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 st.markdown(f"**[Baseline] {baseline_config[0]}**")
-                st.caption("(Baseline from Setup & Test)")
+                # Show modulation params if baseline is modulated
+                if 'modulation_params' in params and 'Modulated' in baseline_config[0]:
+                    mod_vals = []
+                    r_base = params.get('r', 4)
+                    for m in range(r_base + 1):
+                        left_val = params['modulation_params'].get(f'mod_left_{m}', (m+1)/(r_base+2))
+                        mod_vals.append(f"{left_val:.2f}")
+                    st.caption(f"Modulation widths: [{', '.join(mod_vals)}]")
+                else:
+                    st.caption("(Baseline from Setup & Test)")
         
-        # Rows 2+: Other methods (3 per row)
+        # Rows 2+: Other methods (3 per row) with fixed height containers
         if other_configs:
             st.markdown("**Added Methods:**")
             cols_per_row = 3
@@ -2195,10 +3293,14 @@ def compare_tab():
                         label, data = other_configs[idx]
                         
                         with col:
-                            st.markdown(f"**{label}**")
-                            if st.button(f"Remove", key=f"remove_{idx}", type="secondary", use_container_width=True):
-                                del st.session_state.comparison_results[label]
-                                st.rerun()
+                            # Use container for consistent alignment
+                            with st.container():
+                                # Truncate long labels for display
+                                display_label = label if len(label) <= 40 else label[:37] + "..."
+                                st.markdown(f"**{display_label}**")
+                                if st.button(f"Remove", key=f"remove_{idx}", type="secondary", use_container_width=True):
+                                    del st.session_state.comparison_results[label]
+                                    st.rerun()
     
     st.markdown("---")
     
@@ -2308,15 +3410,21 @@ def compare_tab():
             alpha = 1.0 if label == baseline_label else 0.7
             marker = 's' if label == baseline_label else 'o'
             
+            # Create shorter label for legend (split into two lines if too long)
+            short_label = label + (' (baseline)' if label == baseline_label else '')
+            if len(short_label) > 30 and '(' in short_label:
+                parts = short_label.split('(', 1)
+                short_label = parts[0].strip() + '\n(' + parts[1]
+            
             ax1.loglog(grid_sizes, rel_errors, marker=marker, linestyle='-', 
                       color=colors[idx], linewidth=linewidth, markersize=8, 
-                      label=label + (' (baseline)' if label == baseline_label else ''), 
+                      label=short_label, 
                       alpha=alpha)
         
         ax1.set_xlabel('Grid size (n)', fontsize=13, fontweight='bold')
-        ax1.set_ylabel('Max relative error', fontsize=13, fontweight='bold')
+        ax1.set_ylabel('Max relative error (wrt original)', fontsize=13, fontweight='bold')
         ax1.set_title('Convergence Comparison', fontsize=15, fontweight='bold')
-        ax1.legend(loc='best', fontsize=10)
+        ax1.legend(loc='best', fontsize=8)
         ax1.grid(True, alpha=0.3, which='both')
         
         # Right: Rate comparison
@@ -2337,37 +3445,48 @@ def compare_tab():
                         rates.append(rate)
             
             # Add star to baseline
-            star = ' [Baseline]' if label == baseline_label else ''
+            star = ' [B]' if label == baseline_label else ''
             
-            # Split label into method and parameters
+            # Create short label for inside bar
             if '(' in label:
                 method_part = label.split('(')[0].strip()
-                params_part = '(' + label.split('(', 1)[1]
-                # Create two-line label with center alignment
-                formatted_label = f"{method_part}{star}\n{params_part}"
+                short_label = f"{method_part}{star}"
             else:
-                formatted_label = label + star
+                short_label = label + star
             
-            labels_list.append(label + star)
-            labels_formatted.append(formatted_label)
+            labels_list.append(label)
+            labels_formatted.append(short_label)
             avg_rates.append(np.mean(rates) if rates else 0)
             colors_list.append(colors[idx])
         
-        bars = ax2.barh(range(len(labels_formatted)), avg_rates, color=colors_list, alpha=0.7)
+        bars = ax2.barh(range(len(labels_formatted)), avg_rates, color=colors_list, alpha=0.7, height=0.6)
         ax2.set_yticks(range(len(labels_formatted)))
-        ax2.set_yticklabels(labels_formatted, fontsize=10, ha='center', va='center')
+        ax2.set_yticklabels([''] * len(labels_formatted))  # Hide y-axis labels, we'll put them inside bars
         ax2.set_xlabel('Average convergence rate', fontsize=13, fontweight='bold')
-        ax2.set_title('Convergence Rate Comparison', fontsize=15, fontweight='bold')
+        ax2.set_title('Rate Comparison', fontsize=15, fontweight='bold')
         ax2.grid(True, alpha=0.3, axis='x')
         
-        # Add some padding to prevent label cutoff
-        ax2.margins(y=0.05)
+        # Add method labels inside the bars and rates to the right
+        for i, (bar, rate, label_text) in enumerate(zip(bars, avg_rates, labels_formatted)):
+            # Method label inside the bar (left-aligned)
+            ax2.text(0.05, bar.get_y() + bar.get_height() / 2,
+                    label_text, ha='left', va='center', fontsize=9, 
+                    fontweight='bold', color='white')
+            # Rate value to the right of the bar
+            if rate > 0:
+                ax2.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height() / 2,
+                        f'{rate:.1f}', ha='left', va='center', fontsize=10, 
+                        fontweight='bold', color=colors_list[i])
         
         # Highlight best rate
         best_rate_idx = np.argmax(avg_rates)
         bars[best_rate_idx].set_alpha(1.0)
         bars[best_rate_idx].set_edgecolor('gold')
         bars[best_rate_idx].set_linewidth(3)
+        
+        # Adjust x-axis to show rate labels
+        max_rate = max(avg_rates) if avg_rates else 1
+        ax2.set_xlim(0, max_rate * 1.15)
         
         st.pyplot(fig_conv)
         create_download_button(fig_conv, "convergence_comparison", key="dl_conv_comp")
@@ -2461,9 +3580,6 @@ def compare_tab():
                 file_name="fourier_comparison.csv",
                 mime="text/csv"
             )
-        
-        with col2:
-            st.info("**Tip**: Add more methods above or clear all to start fresh.")
     
     else:
         st.info("Add methods above to see comparison results. The baseline from Setup & Test is already included.")
@@ -2580,7 +3696,7 @@ def main():
         
         st.markdown(r"""
         where $s$ is a shift parameter $(0 \le s \le 1)$:
-        - $s = 0$: Standard closed grid (includes $x_\ell$)
+        - $s = 0$: Standard closed grid (includes $x_\ell$, uses $n+1$ points)
         - $s = \frac{1}{2}$: Open grid (grid points at interval midpoints)
         - $s \in (0,1)$: Shifted grid (customizable positioning)
         """)
@@ -2594,13 +3710,31 @@ def main():
         st.latex(r"c = \left\lfloor \frac{p}{q} \times n \right\rfloor")
         st.markdown(r"""
            where $q$ must divide $n$ for optimal FFT efficiency
-        3. **Extension Methods**: Various approaches can be used:
-           - Zero padding
-           - Constant extension
-           - Periodic extension
-           - Linear extrapolation
-           - Hermite interpolation (order $r$)
-           - Custom user-defined extensions
+        """)
+        
+        st.markdown("#### **Extension Methods**")
+        st.markdown(r"""
+        **Periodic Extension**: Simply tiles the function periodically.
+        
+        **Hermite Extension** (FD or GP): Constructs a smooth polynomial extension matching 
+        function values and derivatives at both boundaries up to order $r$:
+        """)
+        st.latex(r"E(x) = \sum_{m=0}^{r} \left[ f^{(m)}(x_r) P_m^R(x) + f^{(m)}(x_\ell) P_m^L(x) \right]")
+        st.markdown(r"""
+        where $P_m^R, P_m^L$ are Hermite basis polynomials. Derivatives can be computed via:
+        - **FD (Finite Differences)**: One sided finite difference differentiation [1]
+        - **GP (Gram Polynomials)**: Modified FC-Gram method [2]
+        
+        **Modulated Hermite Extension**: Enhances Hermite extension with spatially-varying 
+        modulation functions $\eta_m(x)$ that control the support of each derivative term:
+        """)
+        st.latex(r"E(x) = \sum_{m=0}^{r} \left[ f^{(m)}(x_r) \eta_m^R(x) P_m^R(x) + f^{(m)}(x_\ell) \eta_m^L(x) P_m^L(x) \right]")
+        st.markdown(r"""
+        The modulation functions smoothly transition from 1 to 0, with adjustable transition widths 
+        for each derivative order. The **Optimization** feature finds optimal widths by minimizing:
+        - **H² norm**: Sobolev norm penalizing high frequencies
+        - **Hʳ norm**: Sobolev norm of order r matching the Hermite order
+        - **Max norm**: Maximum amplitude in extension region (smallest overshoot)
         """)
         
         st.markdown("#### **Fourier Interpolation**")
@@ -2615,36 +3749,25 @@ def main():
         - $c$: Extension size $= \lfloor (p/q) \times n \rfloor$
         - $p, q$: Rational parameters controlling extension ratio
         - $s$: Grid shift parameter $(0 \le s \le 1)$
-        - $r$: Hermite interpolation order (for Hermite method)
+        - $d$ (or $r$): Hermite degree/order — higher values match more derivatives
+        - Modulation widths: Control spatial support of each derivative term (0 to 1)
         - $[x_\ell, x_r]$: Computational domain interval
         """)
         
-        st.markdown("#### **Analysis Capabilities**")
+        st.markdown("#### **References**")
         st.markdown("""
-        This interface enables researchers to:
-        - **Accuracy Assessment**: Evaluate approximation error for different extension methods
-        - **Convergence Analysis**: Study how errors decrease as grid resolution increases
-        - **Method Comparison**: Compare multiple extension approaches side-by-side
-        - **Custom Extensions**: Test novel extension strategies
-        - **Visualization**: Examine interpolation quality through comprehensive plots
-        """)
+        [1] A. Anand and A. Tiwari, *Fourier interpolation with high-order polynomial extension*, 
+            SIAM Journal on Scientific Computing (2024). [DOI: 10.1137/18M1232826](https://doi.org/10.1137/18M1232826)
         
-        st.markdown("#### **Applications**")
-        st.markdown("""
-        - Spectral methods for PDEs
-        - Signal processing and data interpolation
-        - Numerical analysis research
-        - Approximation theory studies
-        - Development of new extension techniques
-        
-        ---
-        **For more details**, see the research papers and documentation linked in the footer.
+        [2] A. Anand and P. Nainwal, *A modified FC-Gram approximation algorithm with provable error bounds*, 
+            Journal of Scientific Computing, Volume 105, Article 8 (2025). 
+            [DOI: 10.1007/s10915-025-03035-4](https://doi.org/10.1007/s10915-025-03035-4)
         """)
     
     # Main tabs - SIMPLIFIED to 2 tabs
     tab_setup, tab_compare = st.tabs([
         "Setup & Test",
-        "Compare"
+        "Compare Methods"
     ])
     
     # ==========================================================================
@@ -2846,15 +3969,14 @@ def main():
             create_download_button(fig2, f"error_profiles_n{selected_result['n']}", key="dl_fig2")
             plt.close(fig2)
             
-            # Row 3: Convergence analysis (plot + table)
+            # Row 3: Convergence analysis (plot)
             st.markdown("#### Convergence Analysis")
             st.caption(f"Evaluation grid: n_eval = 2 × n_max = {2 * params['n_max']} points")
             
-            fig3 = plt.figure(figsize=(18, 10))
-            gs3 = GridSpec(2, 1, figure=fig3, hspace=0.35)
+            fig3 = plt.figure(figsize=(18, 6))
             
             # Plot 5: Convergence
-            ax5 = fig3.add_subplot(gs3[0, 0])
+            ax5 = fig3.add_subplot(1, 1, 1)
             grid_sizes = [r['n'] for r in results]
             rel_errors = [r['max_rel_error'] for r in results]
             rel_errors_ext = [r['max_rel_error_extended'] for r in results]
@@ -2879,9 +4001,13 @@ def main():
             ax5.legend(loc='best', fontsize=11)
             ax5.grid(True, alpha=0.3, which='both')
             
-            # Table: Convergence data
-            ax_table = fig3.add_subplot(gs3[1, 0])
-            ax_table.axis('off')
+            plt.tight_layout()
+            st.pyplot(fig3)
+            create_download_button(fig3, "convergence_plot", key="dl_fig3_plot")
+            plt.close(fig3)
+            
+            # Convergence table (separate figure with dynamic height)
+            st.markdown("#### Convergence Results Table")
             
             # Compute rates
             rates = []
@@ -2915,12 +4041,20 @@ def main():
                 ]
                 table_data.append(row)
             
+            # Dynamic height based on number of rows
+            n_rows = len(table_data)
+            table_height = max(3, 1 + n_rows * 0.5)  # At least 3 inches
+            
+            fig_table = plt.figure(figsize=(18, table_height))
+            ax_table = fig_table.add_subplot(1, 1, 1)
+            ax_table.axis('off')
+            
             table = ax_table.table(cellText=table_data, colLabels=headers,
                                  cellLoc='center', loc='center',
                                  colWidths=[0.13, 0.13, 0.15, 0.15, 0.15, 0.11, 0.11])
             table.auto_set_font_size(False)
-            table.set_fontsize(11)
-            table.scale(1, 2.5)
+            table.set_fontsize(10)
+            table.scale(1, 2.0)
             
             # Style header
             for i in range(len(headers)):
@@ -2935,11 +4069,10 @@ def main():
                     if i % 2 == 0:
                         cell.set_facecolor('#E7E6E6')
             
-            ax_table.set_title('Convergence Analysis Results', fontsize=15, fontweight='bold', pad=30)
-            
             plt.tight_layout()
-            st.pyplot(fig3)
-            create_download_button(fig3, "convergence_analysis", key="dl_fig3")
+            st.pyplot(fig_table)
+            create_download_button(fig_table, "convergence_table", key="dl_fig_table")
+            plt.close(fig_table)
             
             # Download buttons for convergence analysis
             st.markdown("#### Export Convergence Data")
@@ -3008,7 +4141,8 @@ def main():
     <div style="text-align: center; color: #666;">
     <small>
     <b>HighFIE Lab</b> - High-Order Fourier Interpolation with Extension<br>
-    Developed at <b>Indian Institute of Technology Kanpur</b>
+    Developed at <b>Indian Institute of Technology Kanpur</b><br>
+    Last updated: January 24, 2026
     </small>
     </div>
     """, unsafe_allow_html=True)
